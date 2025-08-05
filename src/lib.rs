@@ -1,0 +1,87 @@
+// SPDX-FileCopyrightText: 2025 Phoenix R&D GmbH <hello@phnx.im>
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+use openmls::{
+    group::{Member, MlsGroup},
+    prelude::Ciphersuite,
+    schedule::{ExternalPsk, PreSharedKeyId, Psk},
+};
+use sha2::{Digest, Sha256};
+use tap::Pipe as _;
+
+use crate::{extension::HPQMLS_EXTENSION_ID, group_builder::GroupBuilder};
+
+pub mod commit_builder;
+pub mod export;
+pub mod extension;
+pub mod external_commit;
+pub mod group_builder;
+pub mod key_package;
+pub mod merging;
+pub mod messages;
+pub mod processing;
+pub mod welcome;
+
+pub struct HpqMlsGroup {
+    pub pq_group: MlsGroup,
+    pub t_group: MlsGroup,
+}
+
+impl HpqMlsGroup {
+    pub fn builder() -> GroupBuilder {
+        GroupBuilder::new()
+    }
+
+    pub fn commit_builder(&mut self) -> commit_builder::CommitBuilder {
+        commit_builder::CommitBuilder::new(self)
+    }
+
+    pub fn t_group_mut(&mut self) -> &mut MlsGroup {
+        &mut self.t_group
+    }
+
+    pub fn members(&self) -> impl Iterator<Item = (Member, Member)> {
+        self.t_group
+            .members()
+            .zip(self.pq_group.members())
+            .map(|(t_member, pq_member)| (t_member, pq_member))
+    }
+
+    // TODO: Return an error here.
+}
+
+fn derive_and_store_psk<Provider: openmls::storage::OpenMlsProvider, const FROM_PENDING: bool>(
+    provider: &Provider,
+    group: &mut MlsGroup,
+    ciphersuite: Ciphersuite,
+) -> PreSharedKeyId {
+    let (psk_value, epoch) = if FROM_PENDING {
+        let psk_value = group
+            .safe_export_secret_from_pending(
+                provider.crypto(),
+                provider.storage(),
+                HPQMLS_EXTENSION_ID,
+            )
+            .unwrap();
+        let epoch = group.epoch().as_u64() + 1;
+        (psk_value, epoch)
+    } else {
+        let psk_value = group
+            .safe_export_secret(provider.crypto(), provider.storage(), HPQMLS_EXTENSION_ID)
+            .unwrap();
+        (psk_value, group.epoch().as_u64())
+    };
+    let mut psk_id_payload = group.group_id().as_slice().to_vec();
+    psk_id_payload.extend(epoch.to_be_bytes());
+    let psk_id = Sha256::digest(psk_id_payload).to_vec();
+    // Prepare the PSK for the T group.
+    let psk_id = psk_id
+        .clone()
+        .pipe(ExternalPsk::new)
+        .pipe(Psk::External)
+        .pipe(|psk| PreSharedKeyId::new(ciphersuite, provider.rand(), psk))
+        .unwrap();
+    psk_id.store(provider, &psk_value).unwrap();
+    psk_id
+}
