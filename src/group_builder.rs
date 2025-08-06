@@ -14,7 +14,7 @@ use openmls::{
 use openmls_traits::signatures::Signer;
 
 use crate::{
-    HpqMlsGroup,
+    HpqGroupId, HpqMlsGroup,
     extension::{HPQMLS_EXTENSION_TYPE, HpqMlsInfo, PqtMode, ensure_extension_support},
     key_package::ensure_ciphersuite_support,
 };
@@ -29,7 +29,7 @@ pub struct GroupBuilder {
     pq_group_builder: MlsGroupBuilder,
     // We keep track of the values below so we can do some post-processing
     // later.
-    group_ids: Option<(GroupId, GroupId)>,
+    group_ids: Option<HpqGroupId>,
     mode: PqtMode,
     t_ciphersuite: Ciphersuite,
     pq_ciphersuite: Ciphersuite,
@@ -66,9 +66,12 @@ impl GroupBuilder {
 
     /// Sets the group ID of the [`HpqMlsGroup`].
     pub fn with_group_ids(mut self, t_group_id: GroupId, pq_group_id: GroupId) -> Self {
-        self.group_ids = Some((t_group_id.clone(), pq_group_id.clone()));
-        self.t_group_builder = self.t_group_builder.with_group_id(t_group_id);
-        self.pq_group_builder = self.pq_group_builder.with_group_id(pq_group_id);
+        self.t_group_builder = self.t_group_builder.with_group_id(t_group_id.clone());
+        self.pq_group_builder = self.pq_group_builder.with_group_id(pq_group_id.clone());
+        self.group_ids = Some(HpqGroupId {
+            t_group_id,
+            pq_group_id,
+        });
         self
     }
 
@@ -85,16 +88,11 @@ impl GroupBuilder {
         let capabilities = ensure_extension_support(self.capabilities);
         let capabilities =
             ensure_ciphersuite_support(capabilities, self.t_ciphersuite, self.pq_ciphersuite);
-        self.t_group_builder = self.t_group_builder.with_capabilities(capabilities.clone());
-        self.pq_group_builder = self.pq_group_builder.with_capabilities(capabilities);
 
         // Add extension to extensions
-        let (t_group_id, pq_group_id) = self.group_ids.unwrap_or_else(|| {
-            (
-                GroupId::random(provider.rand()),
-                GroupId::random(provider.rand()),
-            )
-        });
+        let hpq_group_id = self
+            .group_ids
+            .unwrap_or_else(|| HpqGroupId::random(provider.rand()));
 
         // Add required capabilities extension
         let required_capabilities = RequiredCapabilitiesExtension::new(
@@ -108,8 +106,8 @@ impl GroupBuilder {
         self.pq_extensions.add_or_replace(rc_extension);
 
         let hpq_mls_extension = HpqMlsInfo {
-            t_session_group_id: t_group_id.clone(),
-            pq_session_group_id: pq_group_id.clone(),
+            t_session_group_id: hpq_group_id.t_group_id.clone(),
+            pq_session_group_id: hpq_group_id.pq_group_id.clone(),
             mode: self.mode,
             t_cipher_suite: self.t_ciphersuite,
             pq_cipher_suite: self.pq_ciphersuite,
@@ -123,10 +121,14 @@ impl GroupBuilder {
 
         self.t_group_builder = self
             .t_group_builder
-            .with_group_context_extensions(self.t_extensions)?;
+            .with_group_context_extensions(self.t_extensions)?
+            .with_group_id(hpq_group_id.t_group_id.clone())
+            .with_capabilities(capabilities.clone());
         self.pq_group_builder = self
             .pq_group_builder
-            .with_group_context_extensions(self.pq_extensions)?;
+            .with_group_context_extensions(self.pq_extensions)?
+            .with_group_id(hpq_group_id.pq_group_id.clone())
+            .with_capabilities(capabilities);
 
         let t_group = self
             .t_group_builder

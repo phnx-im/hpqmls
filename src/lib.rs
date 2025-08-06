@@ -4,7 +4,7 @@
 
 use openmls::{
     group::{GroupId, Member, MlsGroup},
-    prelude::Ciphersuite,
+    prelude::{Ciphersuite, OpenMlsRand},
     schedule::{ExternalPsk, PreSharedKeyId, Psk},
     storage::StorageProvider,
 };
@@ -23,6 +23,21 @@ pub mod merging;
 pub mod messages;
 pub mod processing;
 pub mod welcome;
+
+#[derive(Debug)]
+pub struct HpqGroupId {
+    pub t_group_id: GroupId,
+    pub pq_group_id: GroupId,
+}
+
+impl HpqGroupId {
+    pub fn random(rng: &impl OpenMlsRand) -> Self {
+        Self {
+            t_group_id: GroupId::random(rng),
+            pq_group_id: GroupId::random(rng),
+        }
+    }
+}
 
 pub struct HpqMlsGroup {
     pub pq_group: MlsGroup,
