@@ -2,7 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use hpqmls::messages::HpqKeyPackage;
+use hpqmls::{
+    group_builder::{DEFAULT_PQ_CIPHERSUITE, DEFAULT_T_CIPHERSUITE},
+    messages::HpqKeyPackage,
+};
 use openmls::{
     prelude::{BasicCredential, CredentialWithKey},
     storage::OpenMlsProvider,
@@ -20,13 +23,14 @@ pub struct Client<Provider> {
 
 impl<Provider: OpenMlsProvider> Client<Provider> {
     pub fn new(identity: &str, provider: Provider) -> Self {
-        let t_signer = SignatureKeyPair::new(T_SIGNATURE_SCHEME).unwrap();
+        let t_signer = SignatureKeyPair::new(DEFAULT_T_CIPHERSUITE.signature_algorithm()).unwrap();
         let t_credential = BasicCredential::new(identity.as_bytes().to_vec());
         let t_credential_with_key = CredentialWithKey {
             credential: t_credential.into(),
             signature_key: t_signer.public().into(),
         };
-        let pq_signer = SignatureKeyPair::new(PQ_SIGNATURE_SCHEME).unwrap();
+        let pq_signer =
+            SignatureKeyPair::new(DEFAULT_PQ_CIPHERSUITE.signature_algorithm()).unwrap();
         let pq_credential = BasicCredential::new(identity.as_bytes().to_vec());
         let pq_credential_with_key = CredentialWithKey {
             credential: pq_credential.into(),
@@ -45,8 +49,8 @@ impl<Provider: OpenMlsProvider> Client<Provider> {
     pub fn generate_key_package(&self) -> HpqKeyPackage {
         HpqKeyPackage::builder()
             .build(
-                T_CIPHERSUITE,
-                PQ_CIPHERSUITE,
+                DEFAULT_T_CIPHERSUITE,
+                DEFAULT_PQ_CIPHERSUITE,
                 &self.provider,
                 &self.t_signer,
                 &self.pq_signer,
