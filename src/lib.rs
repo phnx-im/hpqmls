@@ -3,9 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use openmls::{
-    group::{Member, MlsGroup},
+    group::{GroupId, Member, MlsGroup},
     prelude::Ciphersuite,
     schedule::{ExternalPsk, PreSharedKeyId, Psk},
+    storage::StorageProvider,
 };
 use sha2::{Digest, Sha256};
 use tap::Pipe as _;
@@ -45,7 +46,18 @@ impl HpqMlsGroup {
         self.t_group.members().zip(self.pq_group.members())
     }
 
-    // TODO: Return an error here.
+    pub fn load<Storage: StorageProvider>(
+        provider: &Storage,
+        t_group_id: &GroupId,
+        pq_group_id: &GroupId,
+    ) -> Result<Option<Self>, Storage::Error> {
+        let t_group = MlsGroup::load(provider, t_group_id)?;
+        let pq_group = MlsGroup::load(provider, pq_group_id)?;
+
+        Ok(t_group
+            .zip(pq_group)
+            .map(|(t_group, pq_group)| Self { pq_group, t_group }))
+    }
 }
 
 fn derive_and_store_psk<Provider: openmls::storage::OpenMlsProvider, const FROM_PENDING: bool>(
