@@ -7,14 +7,18 @@ use std::collections::HashSet;
 use openmls::{
     prelude::{
         Capabilities, Ciphersuite, CredentialWithKey, Extensions, KeyPackageBuilder,
-        KeyPackageBundle, KeyPackageNewError, Lifetime,
+        KeyPackageBundle, KeyPackageNewError, KeyPackageVerifyError, Lifetime, OpenMlsCrypto,
+        ProtocolVersion,
     },
     storage::OpenMlsProvider,
 };
 use openmls_traits::signatures::Signer;
 use tls_codec::{Deserialize as _, Serialize as _};
 
-use crate::{extension::ensure_extension_support, messages::HpqKeyPackage};
+use crate::{
+    extension::ensure_extension_support,
+    messages::{HpqKeyPackage, HpqKeyPackageIn},
+};
 
 pub struct HpqKeyPackageBuilder {
     capabilities: Capabilities,
@@ -126,6 +130,21 @@ impl HpqKeyPackageBuilder {
 impl HpqKeyPackage {
     pub fn builder() -> HpqKeyPackageBuilder {
         HpqKeyPackageBuilder::new()
+    }
+}
+
+impl HpqKeyPackageIn {
+    pub fn validate(
+        self,
+        crypto: &impl OpenMlsCrypto,
+    ) -> Result<HpqKeyPackage, KeyPackageVerifyError> {
+        let protocol_version = ProtocolVersion::default();
+        let t_key_package = self.t_key_package.validate(crypto, protocol_version)?;
+        let pq_key_package = self.pq_key_package.validate(crypto, protocol_version)?;
+        Ok(HpqKeyPackage {
+            t_key_package,
+            pq_key_package,
+        })
     }
 }
 
