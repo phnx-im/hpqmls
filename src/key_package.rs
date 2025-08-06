@@ -5,7 +5,6 @@
 use std::collections::HashSet;
 
 use openmls::{
-    ciphersuite,
     prelude::{
         Capabilities, Ciphersuite, CredentialWithKey, Extensions, KeyPackageBuilder,
         KeyPackageBundle, KeyPackageNewError, Lifetime,

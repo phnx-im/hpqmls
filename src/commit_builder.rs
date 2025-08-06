@@ -202,7 +202,7 @@ impl<'a> CommitBuilder<'a> {
         //    .into_iter()
         //    .map(|kp| (kp.t_key_package, kp.pq_key_package))
         //    .unzip();
-        self.values.proposed_adds.extend(key_packages.into_iter());
+        self.values.proposed_adds.extend(key_packages);
         self
     }
 
@@ -213,23 +213,6 @@ impl<'a> CommitBuilder<'a> {
         self.values.proposed_removals.extend(removed);
         self
     }
-
-    /// Adds a GroupContextExtensions proposal for the provided [`Extensions`] to the list of
-    /// proposals to be committed.
-    // TODO: For now, we don't allow group context extensions in commits outside of the HPQMLSInfo extension.
-    //pub fn propose_group_context_extensions(
-    //    mut self,
-    //    t_extensions: Extensions,
-    //    pq_extensions: Extensions,
-    //) -> Self {
-    //    self.t_builder = self
-    //        .t_builder
-    //        .propose_group_context_extensions(t_extensions);
-    //    self.pq_builder = self
-    //        .pq_builder
-    //        .propose_group_context_extensions(pq_extensions);
-    //    self
-    //}
 
     /// Perform all steps to finish the builder.
     /// - load the PSKs for the PskProposals marked for inclusion

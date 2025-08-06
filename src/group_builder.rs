@@ -7,7 +7,6 @@ use openmls::{
     prelude::{
         Capabilities, Ciphersuite, CredentialWithKey, Extension, ExtensionType, Extensions,
         InvalidExtensionError, Lifetime, RequiredCapabilitiesExtension, SenderRatchetConfiguration,
-        SignatureScheme,
     },
     storage::OpenMlsProvider,
     treesync::errors::LeafNodeValidationError,
