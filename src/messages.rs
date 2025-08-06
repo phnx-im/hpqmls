@@ -4,8 +4,8 @@
 
 use openmls::{
     prelude::{
-        KeyPackage, KeyPackageIn, MlsMessageIn, MlsMessageOut, RatchetTreeIn, Welcome,
-        tls_codec::Serialize,
+        KeyPackage, KeyPackageIn, MlsMessageIn, MlsMessageOut, ProtocolVersion, RatchetTreeIn,
+        Welcome, tls_codec::Serialize,
     },
     treesync::RatchetTree,
 };
@@ -69,6 +69,18 @@ impl TryFrom<HpqMlsMessageOut> for HpqMlsMessageIn {
 pub struct HpqWelcome {
     pub t_welcome: Welcome,
     pub pq_welcome: Welcome,
+}
+
+impl From<HpqWelcome> for HpqMlsMessageOut {
+    fn from(value: HpqWelcome) -> Self {
+        HpqMlsMessageOut {
+            t_message: MlsMessageOut::from_welcome(value.t_welcome, ProtocolVersion::default()),
+            pq_message: Some(MlsMessageOut::from_welcome(
+                value.pq_welcome,
+                ProtocolVersion::default(),
+            )),
+        }
+    }
 }
 
 pub struct HpqRatchetTree {
