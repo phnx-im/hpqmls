@@ -218,6 +218,7 @@ impl<'a> CommitBuilder<'a> {
     /// - load the PSKs for the PskProposals marked for inclusion
     /// - build the commit
     /// - stage the commit
+    ///
     /// TODO: Split this up to enable sans-io usage.
     pub fn finalize<S: Signer, Provider: OpenMlsProvider>(
         self,

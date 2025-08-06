@@ -38,7 +38,7 @@ fn join_group_helper() -> JoinedGroup {
         .unwrap();
 
     let rc = alice_group.t_group.extensions().required_capabilities();
-    println!("Required capabilities for T group: {:?}", rc);
+    println!("Required capabilities for T group: {rc:?}");
 
     // Generate KeyPackages for Bob
     let key_package = bob.generate_key_package();
@@ -200,7 +200,7 @@ fn t_only_update() {
 
     // Bob processes Alice's T-only update
     let commit = MlsMessageIn::tls_deserialize_exact(
-        &alice_commit_bundle
+        alice_commit_bundle
             .into_commit()
             .tls_serialize_detached()
             .unwrap(),

@@ -110,7 +110,7 @@ impl GroupBuilder {
         let hpq_mls_extension = HpqMlsInfo {
             t_session_group_id: t_group_id.clone(),
             pq_session_group_id: pq_group_id.clone(),
-            mode: self.mode.into(),
+            mode: self.mode,
             t_cipher_suite: self.t_ciphersuite,
             pq_cipher_suite: self.pq_ciphersuite,
             t_epoch: GroupEpoch::from(0),

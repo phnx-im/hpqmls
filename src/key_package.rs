@@ -36,6 +36,12 @@ impl HpqKeyPackageBundle {
     }
 }
 
+impl Default for HpqKeyPackageBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HpqKeyPackageBuilder {
     /// Create a key package builder.
     pub fn new() -> Self {
@@ -82,6 +88,7 @@ impl HpqKeyPackageBuilder {
     }
 
     /// Finalize and build the key package.
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         mut self,
         t_ciphersuite: Ciphersuite,
@@ -95,7 +102,7 @@ impl HpqKeyPackageBuilder {
         let capabilities = ensure_extension_support(self.capabilities);
         let capabilities = ensure_ciphersuite_support(capabilities, t_ciphersuite, pq_ciphersuite);
 
-        println!("Using capabilities: {:?}", capabilities);
+        println!("Using capabilities: {capabilities:?}");
         self.t_kp_builder = self
             .t_kp_builder
             .leaf_node_capabilities(capabilities.clone());
@@ -129,7 +136,7 @@ pub(super) fn ensure_ciphersuite_support(
 ) -> Capabilities {
     let mut ciphersuites: HashSet<Ciphersuite> = capabilities
         .ciphersuites()
-        .into_iter()
+        .iter()
         .map(|cs| {
             // TODO: Stupid workaround
             let serialized_ciphersuite = cs.tls_serialize_detached().unwrap();

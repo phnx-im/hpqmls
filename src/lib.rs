@@ -45,7 +45,6 @@ impl HpqMlsGroup {
         self.t_group
             .members()
             .zip(self.pq_group.members())
-            .map(|(t_member, pq_member)| (t_member, pq_member))
     }
 
     // TODO: Return an error here.
