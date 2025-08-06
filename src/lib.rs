@@ -42,9 +42,7 @@ impl HpqMlsGroup {
     }
 
     pub fn members(&self) -> impl Iterator<Item = (Member, Member)> {
-        self.t_group
-            .members()
-            .zip(self.pq_group.members())
+        self.t_group.members().zip(self.pq_group.members())
     }
 
     // TODO: Return an error here.
