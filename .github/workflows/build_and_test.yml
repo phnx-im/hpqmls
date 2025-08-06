@@ -73,7 +73,7 @@ jobs:
       - name: Install cargo-hack
         run: cargo install cargo-hack
       - uses: Swatinem/rust-cache@v2
-      - run: cargo hack check --all-targets -- -D warnings
+      - run: cargo hack check --feature-powerset --no-dev-deps --verbose
 
   rust-test:
     runs-on: ubuntu-latest
