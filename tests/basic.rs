@@ -2,7 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use hpqmls::HpqMlsGroup;
+use hpqmls::{
+    HpqMlsGroup,
+    group_builder::{DEFAULT_PQ_CIPHERSUITE, DEFAULT_T_CIPHERSUITE},
+};
 use openmls::{
     group::{GroupId, MlsGroupJoinConfig},
     prelude::{LeafNodeIndex, MlsMessageIn, OpenMlsProvider, ProcessedMessageContent},
@@ -10,7 +13,7 @@ use openmls::{
 use openmls_rust_crypto::OpenMlsRustCrypto;
 use tls_codec::{Deserialize as _, Serialize};
 
-use crate::utils::{PQ_CIPHERSUITE, T_CIPHERSUITE, assert_groups_eq, client::Client, init_logging};
+use crate::utils::{assert_groups_eq, client::Client, init_logging};
 
 mod utils;
 
@@ -24,7 +27,7 @@ fn join_group_helper() -> JoinedGroup {
             GroupId::random(alice.provider.rand()),
             GroupId::from_slice(b"test_pq_group"),
         )
-        .ciphersuite(T_CIPHERSUITE, PQ_CIPHERSUITE)
+        .ciphersuite(DEFAULT_T_CIPHERSUITE, DEFAULT_PQ_CIPHERSUITE)
         .build(
             &alice.provider,
             &alice.t_signer,
@@ -35,7 +38,7 @@ fn join_group_helper() -> JoinedGroup {
         .unwrap();
 
     let rc = alice_group.t_group.extensions().required_capabilities();
-    println!("Required capabilities for T group: {:?}", rc);
+    println!("Required capabilities for T group: {rc:?}");
 
     // Generate KeyPackages for Bob
     let key_package = bob.generate_key_package();
@@ -197,7 +200,7 @@ fn t_only_update() {
 
     // Bob processes Alice's T-only update
     let commit = MlsMessageIn::tls_deserialize_exact(
-        &alice_commit_bundle
+        alice_commit_bundle
             .into_commit()
             .tls_serialize_detached()
             .unwrap(),

@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::collections::HashSet;
+
 use openmls::{
     prelude::{
         Capabilities, Ciphersuite, CredentialWithKey, Extensions, KeyPackageBuilder,
@@ -10,6 +12,7 @@ use openmls::{
     storage::OpenMlsProvider,
 };
 use openmls_traits::signatures::Signer;
+use tls_codec::{Deserialize as _, Serialize as _};
 
 use crate::{extension::ensure_extension_support, messages::HpqKeyPackage};
 
@@ -30,6 +33,12 @@ impl HpqKeyPackageBundle {
             t_key_package: self.t_kp_bundle.key_package().clone(),
             pq_key_package: self.pq_kp_bundle.key_package().clone(),
         }
+    }
+}
+
+impl Default for HpqKeyPackageBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -79,6 +88,7 @@ impl HpqKeyPackageBuilder {
     }
 
     /// Finalize and build the key package.
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         mut self,
         t_ciphersuite: Ciphersuite,
@@ -90,6 +100,9 @@ impl HpqKeyPackageBuilder {
         pq_credential_with_key: CredentialWithKey,
     ) -> Result<HpqKeyPackageBundle, KeyPackageNewError> {
         let capabilities = ensure_extension_support(self.capabilities);
+        let capabilities = ensure_ciphersuite_support(capabilities, t_ciphersuite, pq_ciphersuite);
+
+        println!("Using capabilities: {capabilities:?}");
         self.t_kp_builder = self
             .t_kp_builder
             .leaf_node_capabilities(capabilities.clone());
@@ -114,4 +127,30 @@ impl HpqKeyPackage {
     pub fn builder() -> HpqKeyPackageBuilder {
         HpqKeyPackageBuilder::new()
     }
+}
+
+pub(super) fn ensure_ciphersuite_support(
+    capabilities: Capabilities,
+    t_ciphersuite: Ciphersuite,
+    pq_ciphersuite: Ciphersuite,
+) -> Capabilities {
+    let mut ciphersuites: HashSet<Ciphersuite> = capabilities
+        .ciphersuites()
+        .iter()
+        .map(|cs| {
+            // TODO: Stupid workaround
+            let serialized_ciphersuite = cs.tls_serialize_detached().unwrap();
+            Ciphersuite::tls_deserialize_exact(&serialized_ciphersuite).unwrap()
+        })
+        .collect();
+    ciphersuites.insert(t_ciphersuite);
+    ciphersuites.insert(pq_ciphersuite);
+    let ciphersuites: Vec<Ciphersuite> = ciphersuites.into_iter().collect();
+    Capabilities::new(
+        Some(capabilities.versions()),
+        Some(&ciphersuites),
+        Some(capabilities.extensions()),
+        Some(capabilities.proposals()),
+        Some(capabilities.credentials()),
+    )
 }

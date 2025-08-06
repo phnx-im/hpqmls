@@ -62,7 +62,7 @@ pub(super) fn ensure_extension_support(capabilities: Capabilities) -> Capabiliti
     }
     let ciphersuites: Vec<Ciphersuite> = capabilities
         .ciphersuites()
-        .into_iter()
+        .iter()
         .map(|cs| {
             // TODO: Stupid workaround
             let serialized_ciphersuite = cs.tls_serialize_detached().unwrap();

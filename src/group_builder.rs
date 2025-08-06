@@ -16,13 +16,12 @@ use openmls_traits::signatures::Signer;
 use crate::{
     HpqMlsGroup,
     extension::{HPQMLS_EXTENSION_TYPE, HpqMlsInfo, PqtMode, ensure_extension_support},
+    key_package::ensure_ciphersuite_support,
 };
 
-pub const DEFAULT_T_CIPHERSUITE: Ciphersuite =
-    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
-// TODO: Try PQ ciphersuite
+pub const DEFAULT_T_CIPHERSUITE: Ciphersuite = Ciphersuite::MLS_256_DHKEMP384_AES256GCM_SHA384_P384;
 pub const DEFAULT_PQ_CIPHERSUITE: Ciphersuite =
-    Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256;
+    Ciphersuite::MLS_256_MLKEM1024_AES256GCM_SHA512_MLDSA87;
 
 #[derive(Debug)]
 pub struct GroupBuilder {
@@ -84,6 +83,8 @@ impl GroupBuilder {
     ) -> Result<HpqMlsGroup, NewGroupError<Provider::StorageError>> {
         // Add extension to capabilities.
         let capabilities = ensure_extension_support(self.capabilities);
+        let capabilities =
+            ensure_ciphersuite_support(capabilities, self.t_ciphersuite, self.pq_ciphersuite);
         self.t_group_builder = self.t_group_builder.with_capabilities(capabilities.clone());
         self.pq_group_builder = self.pq_group_builder.with_capabilities(capabilities);
 
@@ -109,7 +110,7 @@ impl GroupBuilder {
         let hpq_mls_extension = HpqMlsInfo {
             t_session_group_id: t_group_id.clone(),
             pq_session_group_id: pq_group_id.clone(),
-            mode: self.mode.into(),
+            mode: self.mode,
             t_cipher_suite: self.t_ciphersuite,
             pq_cipher_suite: self.pq_ciphersuite,
             t_epoch: GroupEpoch::from(0),
