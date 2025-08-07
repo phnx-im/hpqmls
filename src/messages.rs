@@ -4,16 +4,46 @@
 
 use openmls::{
     prelude::{
-        KeyPackage, KeyPackageIn, MlsMessageIn, MlsMessageOut, ProtocolVersion, RatchetTreeIn,
-        Welcome, tls_codec::Serialize,
+        KeyPackage, KeyPackageIn, MlsMessageBodyIn, MlsMessageIn, MlsMessageOut, ProtocolVersion,
+        RatchetTreeIn, Welcome,
     },
     treesync::RatchetTree,
 };
-use tls_codec::Deserialize;
+use serde::{Deserialize, Serialize};
+use tls_codec::{Deserialize as _, Serialize as _, TlsDeserialize, TlsSerialize, TlsSize};
 
+#[derive(Debug, Clone, TlsDeserialize, TlsSize)]
 pub struct HpqMlsMessageIn {
     pub t_message: MlsMessageIn,
     pub pq_message: Option<MlsMessageIn>,
+}
+
+impl HpqMlsMessageIn {
+    pub fn into_welcome(self) -> Option<HpqWelcome> {
+        let MlsMessageBodyIn::Welcome(t_welcome) = self.t_message.extract() else {
+            return None;
+        };
+        let MlsMessageBodyIn::Welcome(pq_welcome) = self.pq_message?.extract() else {
+            return None;
+        };
+        Some(HpqWelcome {
+            t_welcome,
+            pq_welcome,
+        })
+    }
+
+    pub fn into_key_package(self) -> Option<HpqKeyPackageIn> {
+        let MlsMessageBodyIn::KeyPackage(t_key_package) = self.t_message.extract() else {
+            return None;
+        };
+        let MlsMessageBodyIn::KeyPackage(pq_key_package) = self.pq_message?.extract() else {
+            return None;
+        };
+        Some(HpqKeyPackageIn {
+            t_key_package,
+            pq_key_package,
+        })
+    }
 }
 
 /// Try to convert an HpqMlsMessageIn into a traditional MlsMessageIn.
@@ -41,6 +71,7 @@ impl From<MlsMessageIn> for HpqMlsMessageIn {
     }
 }
 
+#[derive(Debug, Clone, TlsSerialize, TlsSize, Serialize, Deserialize)]
 pub struct HpqMlsMessageOut {
     pub t_message: MlsMessageOut,
     pub pq_message: Option<MlsMessageOut>,
@@ -106,6 +137,15 @@ pub struct HpqRatchetTreeIn {
 pub struct HpqKeyPackage {
     pub t_key_package: KeyPackage,
     pub pq_key_package: KeyPackage,
+}
+
+impl From<HpqKeyPackage> for HpqMlsMessageOut {
+    fn from(value: HpqKeyPackage) -> Self {
+        HpqMlsMessageOut {
+            t_message: MlsMessageOut::from(value.t_key_package),
+            pq_message: Some(MlsMessageOut::from(value.pq_key_package)),
+        }
+    }
 }
 
 pub struct HpqKeyPackageIn {

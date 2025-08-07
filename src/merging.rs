@@ -4,7 +4,7 @@
 
 use openmls::{
     group::{MergeCommitError, MergePendingCommitError},
-    storage::OpenMlsProvider,
+    storage::{OpenMlsProvider, StorageProvider},
 };
 
 use crate::{HpqMlsGroup, processing::HpqStagedCommit};
@@ -38,6 +38,15 @@ impl HpqMlsGroup {
             self.pq_group
                 .merge_staged_commit(provider, pq_staged_commit)?;
         }
+        Ok(())
+    }
+
+    pub fn clear_pending_commits<Storage: StorageProvider>(
+        &mut self,
+        provider: &Storage,
+    ) -> Result<(), Storage::Error> {
+        self.t_group.clear_pending_commit(provider)?;
+        self.pq_group.clear_pending_commit(provider)?;
         Ok(())
     }
 }

@@ -6,16 +6,16 @@ use std::collections::HashSet;
 
 use openmls::{
     prelude::{
-        Capabilities, Ciphersuite, CredentialWithKey, Extensions, KeyPackageBuilder,
-        KeyPackageBundle, KeyPackageNewError, KeyPackageVerifyError, Lifetime, OpenMlsCrypto,
-        ProtocolVersion,
+        Capabilities, Ciphersuite, Extensions, KeyPackageBuilder, KeyPackageBundle,
+        KeyPackageNewError, KeyPackageVerifyError, Lifetime, OpenMlsCrypto, ProtocolVersion,
     },
     storage::OpenMlsProvider,
 };
-use openmls_traits::signatures::Signer;
 use tls_codec::{Deserialize as _, Serialize as _};
 
 use crate::{
+    HpqCiphersuite,
+    authentication::{HpqCredentialWithKey, HpqSigner},
     extension::ensure_extension_support,
     messages::{HpqKeyPackage, HpqKeyPackageIn},
 };
@@ -95,30 +95,33 @@ impl HpqKeyPackageBuilder {
     #[allow(clippy::too_many_arguments)]
     pub fn build(
         mut self,
-        t_ciphersuite: Ciphersuite,
-        pq_ciphersuite: Ciphersuite,
         provider: &impl OpenMlsProvider,
-        t_signer: &impl Signer,
-        pq_signer: &impl Signer,
-        t_credential_with_key: CredentialWithKey,
-        pq_credential_with_key: CredentialWithKey,
+        ciphersuite: HpqCiphersuite,
+        signer: &impl HpqSigner,
+        credential_with_key: HpqCredentialWithKey,
     ) -> Result<HpqKeyPackageBundle, KeyPackageNewError> {
         let capabilities = ensure_extension_support(self.capabilities);
-        let capabilities = ensure_ciphersuite_support(capabilities, t_ciphersuite, pq_ciphersuite);
+        let capabilities = ensure_ciphersuite_support(
+            capabilities,
+            ciphersuite.t_ciphersuite,
+            ciphersuite.pq_ciphersuite,
+        );
 
-        println!("Using capabilities: {capabilities:?}");
         self.t_kp_builder = self
             .t_kp_builder
             .leaf_node_capabilities(capabilities.clone());
         self.pq_kp_builder = self.pq_kp_builder.leaf_node_capabilities(capabilities);
-        let t_kp_bundle =
-            self.t_kp_builder
-                .build(t_ciphersuite, provider, t_signer, t_credential_with_key)?;
-        let pq_kp_bundle = self.pq_kp_builder.build(
-            pq_ciphersuite,
+        let t_kp_bundle = self.t_kp_builder.build(
+            ciphersuite.t_ciphersuite,
             provider,
-            pq_signer,
-            pq_credential_with_key,
+            signer.t_signer(),
+            credential_with_key.t_credential,
+        )?;
+        let pq_kp_bundle = self.pq_kp_builder.build(
+            ciphersuite.pq_ciphersuite,
+            provider,
+            signer.pq_signer(),
+            credential_with_key.pq_credential,
         )?;
         Ok(HpqKeyPackageBundle {
             t_kp_bundle,

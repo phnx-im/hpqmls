@@ -12,6 +12,9 @@ env_logger = "0.11.8"
 openmls = { git = "https://github.com/openmls/openmls.git", branch = "konrad/hpqmls_dep_branch", features = [
     "extensions-draft-08",
 ] }
+openmls_basic_credential = { git = "https://github.com/openmls/openmls.git", branch = "konrad/hpqmls_dep_branch", features = [
+    "clonable",
+] }
 openmls_traits = { git = "https://github.com/openmls/openmls.git", branch = "konrad/hpqmls_dep_branch", features = [
     "extensions-draft-08",
 ] }
@@ -21,5 +24,4 @@ tap = "1.0.1"
 tls_codec = "0.4.2"
 
 [dev-dependencies]
-openmls_basic_credential = { git = "https://github.com/openmls/openmls.git", branch = "konrad/hpqmls_dep_branch" }
 openmls_rust_crypto = { git = "https://github.com/openmls/openmls.git", branch = "konrad/hpqmls_dep_branch" }

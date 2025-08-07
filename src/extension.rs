@@ -8,6 +8,8 @@ use openmls::{
 };
 use tls_codec::{Deserialize as _, Serialize as _, TlsDeserialize, TlsSerialize, TlsSize};
 
+use crate::HpqMlsGroup;
+
 pub(super) const HPQMLS_EXTENSION_ID: u16 = 0xFF01;
 pub(super) const HPQMLS_EXTENSION_TYPE: ExtensionType = ExtensionType::Unknown(HPQMLS_EXTENSION_ID);
 
@@ -29,7 +31,7 @@ impl From<PqtMode> for bool {
 }
 
 #[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize)]
-pub(super) struct HpqMlsInfo {
+pub struct HpqMlsInfo {
     pub t_session_group_id: GroupId,
     pub pq_session_group_id: GroupId,
     pub mode: PqtMode,
@@ -76,4 +78,16 @@ pub(super) fn ensure_extension_support(capabilities: Capabilities) -> Capabiliti
         Some(capabilities.proposals()),
         Some(capabilities.credentials()),
     )
+}
+
+impl HpqMlsGroup {
+    pub fn hpq_info(&self) -> HpqMlsInfo {
+        let current_extensions = &self
+            .t_group
+            .extensions()
+            .unknown(HPQMLS_EXTENSION_ID)
+            .unwrap()
+            .0;
+        HpqMlsInfo::tls_deserialize_exact(current_extensions).unwrap()
+    }
 }

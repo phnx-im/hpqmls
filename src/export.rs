@@ -7,9 +7,10 @@ use openmls::{
     prelude::OpenMlsCrypto,
     storage::StorageProvider,
 };
-use openmls_traits::signatures::Signer;
 
-use crate::{HpqMlsGroup, external_commit::HpqGroupInfo, messages::HpqRatchetTree};
+use crate::{
+    HpqMlsGroup, authentication::HpqSigner, external_commit::HpqGroupInfo, messages::HpqRatchetTree,
+};
 
 impl HpqMlsGroup {
     pub fn export_ratchet_tree(&self) -> HpqRatchetTree {
@@ -24,16 +25,15 @@ impl HpqMlsGroup {
     pub fn export_group_info(
         &self,
         crypto: &impl OpenMlsCrypto,
-        t_signer: &impl Signer,
-        pq_signer: &impl Signer,
+        signer: &impl HpqSigner,
         with_ratchet_tree: bool,
     ) -> Result<HpqGroupInfo, ExportGroupInfoError> {
-        let t_group_info = self
-            .t_group
-            .export_group_info(crypto, t_signer, with_ratchet_tree)?;
+        let t_group_info =
+            self.t_group
+                .export_group_info(crypto, signer.t_signer(), with_ratchet_tree)?;
         let pq_group_info =
             self.pq_group
-                .export_group_info(crypto, pq_signer, with_ratchet_tree)?;
+                .export_group_info(crypto, signer.pq_signer(), with_ratchet_tree)?;
         let group_info = HpqGroupInfo {
             t_group_info,
             pq_group_info: Some(pq_group_info),

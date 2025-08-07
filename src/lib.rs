@@ -4,16 +4,21 @@
 
 use openmls::{
     group::{GroupId, Member, MlsGroup},
-    prelude::{Ciphersuite, OpenMlsRand},
+    prelude::{Ciphersuite, LeafNodeIndex, OpenMlsRand},
     schedule::{ExternalPsk, PreSharedKeyId, Psk},
-    storage::StorageProvider,
+    storage::{OpenMlsProvider, StorageProvider},
 };
+use openmls_traits::storage::{CURRENT_VERSION, Entity, StorageProvider as _, traits};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tap::Pipe as _;
+use tls_codec::SecretVLBytes;
 
-use crate::{extension::HPQMLS_EXTENSION_ID, group_builder::GroupBuilder};
+use crate::{
+    authentication::HpqVerifyingKey, extension::HPQMLS_EXTENSION_ID, group_builder::GroupBuilder,
+};
 
+pub mod authentication;
 pub mod commit_builder;
 pub mod export;
 pub mod extension;
@@ -24,6 +29,12 @@ pub mod merging;
 pub mod messages;
 pub mod processing;
 pub mod welcome;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HpqCiphersuite {
+    pub t_ciphersuite: Ciphersuite,
+    pub pq_ciphersuite: Ciphersuite,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HpqGroupId {
@@ -62,19 +73,56 @@ impl HpqMlsGroup {
         self.t_group.members().zip(self.pq_group.members())
     }
 
+    pub fn group_id(&self) -> HpqGroupId {
+        HpqGroupId {
+            t_group_id: self.t_group.group_id().clone(),
+            pq_group_id: self.pq_group.group_id().clone(),
+        }
+    }
+
+    pub fn verifying_key_at(&self, index: LeafNodeIndex) -> Option<HpqVerifyingKey> {
+        let t_member = self.t_group.member_at(index)?;
+        let pq_member = self.pq_group.member_at(index)?;
+        Some(HpqVerifyingKey {
+            t_verifying_key: t_member.signature_key.into(),
+            pq_verifying_key: pq_member.signature_key.into(),
+        })
+    }
+
     pub fn load<Storage: StorageProvider>(
         provider: &Storage,
-        t_group_id: &GroupId,
-        pq_group_id: &GroupId,
+        group_id: &HpqGroupId,
     ) -> Result<Option<Self>, Storage::Error> {
-        let t_group = MlsGroup::load(provider, t_group_id)?;
-        let pq_group = MlsGroup::load(provider, pq_group_id)?;
+        let t_group = MlsGroup::load(provider, &group_id.t_group_id)?;
+        let pq_group = MlsGroup::load(provider, &group_id.pq_group_id)?;
 
         Ok(t_group
             .zip(pq_group)
             .map(|(t_group, pq_group)| Self { pq_group, t_group }))
     }
+
+    pub fn delete<Storage: StorageProvider>(
+        &mut self,
+        provider: &Storage,
+    ) -> Result<(), Storage::Error> {
+        self.t_group.delete(provider)?;
+        self.pq_group.delete(provider)?;
+        Ok(())
+    }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Secret {
+    value: SecretVLBytes,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PskBundle {
+    secret: Secret,
+}
+
+impl Entity<CURRENT_VERSION> for PskBundle {}
+impl traits::PskBundle<CURRENT_VERSION> for PskBundle {}
 
 fn derive_and_store_psk<Provider: openmls::storage::OpenMlsProvider, const FROM_PENDING: bool>(
     provider: &Provider,
@@ -107,6 +155,12 @@ fn derive_and_store_psk<Provider: openmls::storage::OpenMlsProvider, const FROM_
         .pipe(Psk::External)
         .pipe(|psk| PreSharedKeyId::new(ciphersuite, provider.rand(), psk))
         .unwrap();
-    psk_id.store(provider, &psk_value).unwrap();
+    store_psk(provider, &psk_id, &psk_value);
     psk_id
+}
+
+fn store_psk<Provider: OpenMlsProvider>(provider: &Provider, psk_id: &PreSharedKeyId, psk: &[u8]) {
+    // Delete any existing PSK with the same ID.
+    provider.storage().delete_psk::<Psk>(psk_id.psk()).unwrap();
+    psk_id.store(provider, &psk).unwrap();
 }

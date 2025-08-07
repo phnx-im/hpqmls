@@ -5,16 +5,16 @@
 use openmls::{
     group::{GroupEpoch, GroupId, MlsGroupBuilder, NewGroupError, WireFormatPolicy},
     prelude::{
-        Capabilities, Ciphersuite, CredentialWithKey, Extension, ExtensionType, Extensions,
-        InvalidExtensionError, Lifetime, RequiredCapabilitiesExtension, SenderRatchetConfiguration,
+        Capabilities, Ciphersuite, Extension, ExtensionType, Extensions, InvalidExtensionError,
+        Lifetime, RequiredCapabilitiesExtension, SenderRatchetConfiguration,
     },
     storage::OpenMlsProvider,
     treesync::errors::LeafNodeValidationError,
 };
-use openmls_traits::signatures::Signer;
 
 use crate::{
-    HpqGroupId, HpqMlsGroup,
+    HpqCiphersuite, HpqGroupId, HpqMlsGroup,
+    authentication::{HpqCredentialWithKey, HpqSigner},
     extension::{HPQMLS_EXTENSION_TYPE, HpqMlsInfo, PqtMode, ensure_extension_support},
     key_package::ensure_ciphersuite_support,
 };
@@ -22,6 +22,11 @@ use crate::{
 pub const DEFAULT_T_CIPHERSUITE: Ciphersuite = Ciphersuite::MLS_256_DHKEMP384_AES256GCM_SHA384_P384;
 pub const DEFAULT_PQ_CIPHERSUITE: Ciphersuite =
     Ciphersuite::MLS_256_MLKEM1024_AES256GCM_SHA512_MLDSA87;
+
+pub const DEFAULT_CIPHERSUITE: HpqCiphersuite = HpqCiphersuite {
+    t_ciphersuite: DEFAULT_T_CIPHERSUITE,
+    pq_ciphersuite: DEFAULT_PQ_CIPHERSUITE,
+};
 
 #[derive(Debug)]
 pub struct GroupBuilder {
@@ -79,10 +84,8 @@ impl GroupBuilder {
     pub fn build<Provider: OpenMlsProvider>(
         mut self,
         provider: &Provider,
-        t_signer: &impl Signer,
-        pq_signer: &impl Signer,
-        t_credential_with_key: CredentialWithKey,
-        pq_credential_with_key: CredentialWithKey,
+        signer: &impl HpqSigner,
+        credential_with_key: HpqCredentialWithKey,
     ) -> Result<HpqMlsGroup, NewGroupError<Provider::StorageError>> {
         // Add extension to capabilities.
         let capabilities = ensure_extension_support(self.capabilities);
@@ -130,12 +133,16 @@ impl GroupBuilder {
             .with_group_id(hpq_group_id.pq_group_id.clone())
             .with_capabilities(capabilities);
 
-        let t_group = self
-            .t_group_builder
-            .build(provider, t_signer, t_credential_with_key)?;
-        let pq_group = self
-            .pq_group_builder
-            .build(provider, pq_signer, pq_credential_with_key)?;
+        let t_group = self.t_group_builder.build(
+            provider,
+            signer.t_signer(),
+            credential_with_key.t_credential,
+        )?;
+        let pq_group = self.pq_group_builder.build(
+            provider,
+            signer.pq_signer(),
+            credential_with_key.pq_credential,
+        )?;
         Ok(HpqMlsGroup { pq_group, t_group })
     }
 
@@ -219,9 +226,11 @@ impl GroupBuilder {
     }
 
     /// Sets the `ciphersuite` of the MlsGroup.
-    pub fn ciphersuite(mut self, t_ciphersuite: Ciphersuite, pq_ciphersuite: Ciphersuite) -> Self {
-        self.t_group_builder = self.t_group_builder.ciphersuite(t_ciphersuite);
-        self.pq_group_builder = self.pq_group_builder.ciphersuite(pq_ciphersuite);
+    pub fn ciphersuite(mut self, ciphersuite: HpqCiphersuite) -> Self {
+        self.t_group_builder = self.t_group_builder.ciphersuite(ciphersuite.t_ciphersuite);
+        self.pq_group_builder = self
+            .pq_group_builder
+            .ciphersuite(ciphersuite.pq_ciphersuite);
         self
     }
 

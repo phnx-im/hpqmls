@@ -4,7 +4,8 @@
 
 use hpqmls::{
     HpqMlsGroup,
-    group_builder::{DEFAULT_PQ_CIPHERSUITE, DEFAULT_T_CIPHERSUITE},
+    authentication::HpqSigner as _,
+    group_builder::{DEFAULT_CIPHERSUITE, DEFAULT_PQ_CIPHERSUITE, DEFAULT_T_CIPHERSUITE},
 };
 use openmls::{
     group::{GroupId, MlsGroupJoinConfig},
@@ -27,13 +28,11 @@ fn join_group_helper() -> JoinedGroup {
             GroupId::random(alice.provider.rand()),
             GroupId::from_slice(b"test_pq_group"),
         )
-        .ciphersuite(DEFAULT_T_CIPHERSUITE, DEFAULT_PQ_CIPHERSUITE)
+        .ciphersuite(DEFAULT_CIPHERSUITE)
         .build(
             &alice.provider,
-            &alice.t_signer,
-            &alice.pq_signer,
-            alice.t_credential_with_key.clone(),
-            alice.pq_credential_with_key.clone(),
+            &alice.signer,
+            alice.credential_with_key.clone(),
         )
         .unwrap();
 
@@ -47,13 +46,7 @@ fn join_group_helper() -> JoinedGroup {
     let commit_bundle = alice_group
         .commit_builder()
         .propose_adds([key_package])
-        .finalize(
-            &alice.provider,
-            &alice.t_signer,
-            &alice.pq_signer,
-            |_| true,
-            |_| true,
-        )
+        .finalize(&alice.provider, &alice.signer, |_| true, |_| true)
         .unwrap();
 
     alice_group.merge_pending_commit(&alice.provider).unwrap();
@@ -92,13 +85,7 @@ fn update_group_helper(group: JoinedGroup) -> JoinedGroup {
     let alice_commit_bundle = alice_group
         .commit_builder()
         .force_self_update(true)
-        .finalize(
-            &alice.provider,
-            &alice.t_signer,
-            &alice.pq_signer,
-            |_| true,
-            |_| true,
-        )
+        .finalize(&alice.provider, &alice.signer, |_| true, |_| true)
         .unwrap();
     alice_group.merge_pending_commit(&alice.provider).unwrap();
 
@@ -156,13 +143,7 @@ fn remove_from_group() {
     let _bob_commit_bundle = bob_group
         .commit_builder()
         .propose_removals(std::iter::once(LeafNodeIndex::new(0)))
-        .finalize(
-            &bob.provider,
-            &bob.t_signer,
-            &bob.pq_signer,
-            |_| true,
-            |_| true,
-        )
+        .finalize(&bob.provider, &bob.signer, |_| true, |_| true)
         .unwrap();
     bob_group.merge_pending_commit(&bob.provider).unwrap();
 }
@@ -186,7 +167,7 @@ fn t_only_update() {
         .build(
             alice.provider.rand(),
             alice.provider.crypto(),
-            &alice.t_signer,
+            alice.signer.t_signer(),
             |_| true,
         )
         .unwrap()
