@@ -37,7 +37,6 @@ fn join_group_helper() -> JoinedGroup {
         .unwrap();
 
     let rc = alice_group.t_group.extensions().required_capabilities();
-    println!("Required capabilities for T group: {rc:?}");
 
     // Generate KeyPackages for Bob
     let key_package = bob.generate_key_package();

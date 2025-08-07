@@ -265,7 +265,6 @@ impl<'a> CommitBuilder<'a> {
             .build(provider.rand(), provider.crypto(), signer.t_signer(), t_f)?
             .stage_commit(provider)
             .unwrap();
-        println!("Sending T message: {:?}", t_result.commit());
         Ok(HpqCommitMessageBundle::from_bundles(
             t_result,
             Some(pq_result),

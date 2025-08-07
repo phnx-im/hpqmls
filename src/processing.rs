@@ -69,18 +69,13 @@ impl HpqMlsGroup {
         provider: &Provider,
         message: HpqMlsMessageIn,
     ) -> Result<HpqProcessedMessage, ProcessMessageError> {
-        println!("Processing T message: {:?}", message.t_message);
         let pq_message = match message.pq_message {
-            None => {
-                println!("No PQ message in HPQMLS");
-                None
-            }
+            None => None,
             Some(pq_message) => {
                 let pq_protocol_message = into_protocol_message(pq_message.extract())?;
                 let mut pq_processed_message = self
                     .pq_group
                     .process_message(provider, pq_protocol_message)?;
-                println!("Done processing PQ message in HPQMLS");
                 let psk_value = pq_processed_message
                     .safe_export_secret(provider.crypto(), HPQMLS_EXTENSION_ID)
                     .unwrap();
@@ -102,7 +97,6 @@ impl HpqMlsGroup {
 
         let t_protocol_message = into_protocol_message(message.t_message.extract())?;
         let t_message = self.t_group.process_message(provider, t_protocol_message)?;
-        println!("Done processing T message in HPQMLS");
 
         Ok(HpqProcessedMessage {
             t_message,
