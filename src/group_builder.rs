@@ -5,16 +5,16 @@
 use openmls::{
     group::{GroupEpoch, GroupId, MlsGroupBuilder, NewGroupError, WireFormatPolicy},
     prelude::{
-        Capabilities, Ciphersuite, CredentialWithKey, Extension, ExtensionType, Extensions,
-        InvalidExtensionError, Lifetime, RequiredCapabilitiesExtension, SenderRatchetConfiguration,
+        Capabilities, Ciphersuite, Extension, ExtensionType, Extensions, InvalidExtensionError,
+        Lifetime, RequiredCapabilitiesExtension, SenderRatchetConfiguration,
     },
     storage::OpenMlsProvider,
     treesync::errors::LeafNodeValidationError,
 };
-use openmls_traits::signatures::Signer;
 
 use crate::{
-    HpqMlsGroup,
+    HpqCiphersuite, HpqGroupId, HpqMlsGroup,
+    authentication::{HpqCredentialWithKey, HpqSigner},
     extension::{HPQMLS_EXTENSION_TYPE, HpqMlsInfo, PqtMode, ensure_extension_support},
     key_package::ensure_ciphersuite_support,
 };
@@ -23,13 +23,18 @@ pub const DEFAULT_T_CIPHERSUITE: Ciphersuite = Ciphersuite::MLS_256_DHKEMP384_AE
 pub const DEFAULT_PQ_CIPHERSUITE: Ciphersuite =
     Ciphersuite::MLS_256_MLKEM1024_AES256GCM_SHA512_MLDSA87;
 
+pub const DEFAULT_CIPHERSUITE: HpqCiphersuite = HpqCiphersuite {
+    t_ciphersuite: DEFAULT_T_CIPHERSUITE,
+    pq_ciphersuite: DEFAULT_PQ_CIPHERSUITE,
+};
+
 #[derive(Debug)]
 pub struct GroupBuilder {
     t_group_builder: MlsGroupBuilder,
     pq_group_builder: MlsGroupBuilder,
     // We keep track of the values below so we can do some post-processing
     // later.
-    group_ids: Option<(GroupId, GroupId)>,
+    group_ids: Option<HpqGroupId>,
     mode: PqtMode,
     t_ciphersuite: Ciphersuite,
     pq_ciphersuite: Ciphersuite,
@@ -66,9 +71,12 @@ impl GroupBuilder {
 
     /// Sets the group ID of the [`HpqMlsGroup`].
     pub fn with_group_ids(mut self, t_group_id: GroupId, pq_group_id: GroupId) -> Self {
-        self.group_ids = Some((t_group_id.clone(), pq_group_id.clone()));
-        self.t_group_builder = self.t_group_builder.with_group_id(t_group_id);
-        self.pq_group_builder = self.pq_group_builder.with_group_id(pq_group_id);
+        self.t_group_builder = self.t_group_builder.with_group_id(t_group_id.clone());
+        self.pq_group_builder = self.pq_group_builder.with_group_id(pq_group_id.clone());
+        self.group_ids = Some(HpqGroupId {
+            t_group_id,
+            pq_group_id,
+        });
         self
     }
 
@@ -76,25 +84,18 @@ impl GroupBuilder {
     pub fn build<Provider: OpenMlsProvider>(
         mut self,
         provider: &Provider,
-        t_signer: &impl Signer,
-        pq_signer: &impl Signer,
-        t_credential_with_key: CredentialWithKey,
-        pq_credential_with_key: CredentialWithKey,
+        signer: &impl HpqSigner,
+        credential_with_key: HpqCredentialWithKey,
     ) -> Result<HpqMlsGroup, NewGroupError<Provider::StorageError>> {
         // Add extension to capabilities.
         let capabilities = ensure_extension_support(self.capabilities);
         let capabilities =
             ensure_ciphersuite_support(capabilities, self.t_ciphersuite, self.pq_ciphersuite);
-        self.t_group_builder = self.t_group_builder.with_capabilities(capabilities.clone());
-        self.pq_group_builder = self.pq_group_builder.with_capabilities(capabilities);
 
         // Add extension to extensions
-        let (t_group_id, pq_group_id) = self.group_ids.unwrap_or_else(|| {
-            (
-                GroupId::random(provider.rand()),
-                GroupId::random(provider.rand()),
-            )
-        });
+        let hpq_group_id = self
+            .group_ids
+            .unwrap_or_else(|| HpqGroupId::random(provider.rand()));
 
         // Add required capabilities extension
         let required_capabilities = RequiredCapabilitiesExtension::new(
@@ -108,8 +109,8 @@ impl GroupBuilder {
         self.pq_extensions.add_or_replace(rc_extension);
 
         let hpq_mls_extension = HpqMlsInfo {
-            t_session_group_id: t_group_id.clone(),
-            pq_session_group_id: pq_group_id.clone(),
+            t_session_group_id: hpq_group_id.t_group_id.clone(),
+            pq_session_group_id: hpq_group_id.pq_group_id.clone(),
             mode: self.mode,
             t_cipher_suite: self.t_ciphersuite,
             pq_cipher_suite: self.pq_ciphersuite,
@@ -123,17 +124,25 @@ impl GroupBuilder {
 
         self.t_group_builder = self
             .t_group_builder
-            .with_group_context_extensions(self.t_extensions)?;
+            .with_group_context_extensions(self.t_extensions)?
+            .with_group_id(hpq_group_id.t_group_id.clone())
+            .with_capabilities(capabilities.clone());
         self.pq_group_builder = self
             .pq_group_builder
-            .with_group_context_extensions(self.pq_extensions)?;
+            .with_group_context_extensions(self.pq_extensions)?
+            .with_group_id(hpq_group_id.pq_group_id.clone())
+            .with_capabilities(capabilities);
 
-        let t_group = self
-            .t_group_builder
-            .build(provider, t_signer, t_credential_with_key)?;
-        let pq_group = self
-            .pq_group_builder
-            .build(provider, pq_signer, pq_credential_with_key)?;
+        let t_group = self.t_group_builder.build(
+            provider,
+            signer.t_signer(),
+            credential_with_key.t_credential,
+        )?;
+        let pq_group = self.pq_group_builder.build(
+            provider,
+            signer.pq_signer(),
+            credential_with_key.pq_credential,
+        )?;
         Ok(HpqMlsGroup { pq_group, t_group })
     }
 
@@ -217,9 +226,11 @@ impl GroupBuilder {
     }
 
     /// Sets the `ciphersuite` of the MlsGroup.
-    pub fn ciphersuite(mut self, t_ciphersuite: Ciphersuite, pq_ciphersuite: Ciphersuite) -> Self {
-        self.t_group_builder = self.t_group_builder.ciphersuite(t_ciphersuite);
-        self.pq_group_builder = self.pq_group_builder.ciphersuite(pq_ciphersuite);
+    pub fn ciphersuite(mut self, ciphersuite: HpqCiphersuite) -> Self {
+        self.t_group_builder = self.t_group_builder.ciphersuite(ciphersuite.t_ciphersuite);
+        self.pq_group_builder = self
+            .pq_group_builder
+            .ciphersuite(ciphersuite.pq_ciphersuite);
         self
     }
 

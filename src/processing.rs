@@ -11,7 +11,7 @@ use openmls::{
 use sha2::{Digest as _, Sha256};
 use tap::Pipe as _;
 
-use crate::{HpqMlsGroup, extension::HPQMLS_EXTENSION_ID, messages::HpqMlsMessageIn};
+use crate::{HpqMlsGroup, extension::HPQMLS_EXTENSION_ID, messages::HpqMlsMessageIn, store_psk};
 
 pub struct HpqProcessedMessage {
     pub t_message: ProcessedMessage,
@@ -69,13 +69,18 @@ impl HpqMlsGroup {
         provider: &Provider,
         message: HpqMlsMessageIn,
     ) -> Result<HpqProcessedMessage, ProcessMessageError> {
+        println!("Processing T message: {:?}", message.t_message);
         let pq_message = match message.pq_message {
-            None => None,
+            None => {
+                println!("No PQ message in HPQMLS");
+                None
+            }
             Some(pq_message) => {
                 let pq_protocol_message = into_protocol_message(pq_message.extract())?;
                 let mut pq_processed_message = self
                     .pq_group
                     .process_message(provider, pq_protocol_message)?;
+                println!("Done processing PQ message in HPQMLS");
                 let psk_value = pq_processed_message
                     .safe_export_secret(provider.crypto(), HPQMLS_EXTENSION_ID)
                     .unwrap();
@@ -90,13 +95,14 @@ impl HpqMlsGroup {
                         PreSharedKeyId::new(self.t_group.ciphersuite(), provider.rand(), psk)
                     })
                     .unwrap();
-                psk_id.store(provider, &psk_value).unwrap();
+                store_psk(provider, &psk_id, &psk_value);
                 Some(pq_processed_message)
             }
         };
 
         let t_protocol_message = into_protocol_message(message.t_message.extract())?;
         let t_message = self.t_group.process_message(provider, t_protocol_message)?;
+        println!("Done processing T message in HPQMLS");
 
         Ok(HpqProcessedMessage {
             t_message,

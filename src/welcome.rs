@@ -39,7 +39,6 @@ impl HpqMlsGroup {
         let mut pq_group = pq_staged_welcome.into_group(provider)?;
 
         derive_and_store_psk::<_, false>(provider, &mut pq_group, DEFAULT_T_CIPHERSUITE);
-        println!("Derived and stored PSK for PQ group");
 
         let t_group = StagedWelcome::new_from_welcome(
             provider,

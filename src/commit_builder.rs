@@ -10,12 +10,13 @@ use openmls::{
     prelude::{LeafNodeIndex, LeafNodeParameters, PreSharedKeyProposal, Proposal, ProposalType},
     storage::OpenMlsProvider,
 };
-use openmls_traits::signatures::Signer;
 use tap::Pipe as _;
 use tls_codec::Deserialize;
 
 use crate::{
-    HpqMlsGroup, derive_and_store_psk,
+    HpqMlsGroup,
+    authentication::HpqSigner,
+    derive_and_store_psk,
     extension::{HPQMLS_EXTENSION_ID, HpqMlsInfo},
     external_commit::HpqGroupInfo,
     messages::{HpqKeyPackage, HpqMlsMessageOut, HpqWelcome},
@@ -220,11 +221,10 @@ impl<'a> CommitBuilder<'a> {
     /// - stage the commit
     ///
     /// TODO: Split this up to enable sans-io usage.
-    pub fn finalize<S: Signer, Provider: OpenMlsProvider>(
+    pub fn finalize<S: HpqSigner, Provider: OpenMlsProvider>(
         self,
         provider: &Provider,
-        t_signer: &S,
-        pq_signer: &S,
+        signer: &S,
         t_f: impl FnMut(&QueuedProposal) -> bool,
         pq_f: impl FnMut(&QueuedProposal) -> bool,
     ) -> Result<HpqCommitMessageBundle, CreateCommitError> {
@@ -234,8 +234,7 @@ impl<'a> CommitBuilder<'a> {
             .unwrap()
             .clone()
             .0;
-        let mut current_extension = HpqMlsInfo::tls_deserialize_exact(&extension_bytes)
-            .expect("Failed to deserialize HpqMlsInfo extension");
+        let mut current_extension = HpqMlsInfo::tls_deserialize_exact(&extension_bytes).unwrap();
         current_extension.increment_epoch();
         current_extensions.add_or_replace(current_extension.to_extension());
 
@@ -245,7 +244,7 @@ impl<'a> CommitBuilder<'a> {
         let pq_result = pq_builder
             .propose_group_context_extensions(current_extensions.clone())
             .load_psks(provider.storage())?
-            .build(provider.rand(), provider.crypto(), pq_signer, pq_f)?
+            .build(provider.rand(), provider.crypto(), signer.pq_signer(), pq_f)?
             .stage_commit(provider)
             .unwrap();
         // Prepare the PSK for the T group.
@@ -263,9 +262,10 @@ impl<'a> CommitBuilder<'a> {
             .add_proposal(psk_proposal)
             .propose_group_context_extensions(current_extensions)
             .load_psks(provider.storage())?
-            .build(provider.rand(), provider.crypto(), t_signer, t_f)?
+            .build(provider.rand(), provider.crypto(), signer.t_signer(), t_f)?
             .stage_commit(provider)
             .unwrap();
+        println!("Sending T message: {:?}", t_result.commit());
         Ok(HpqCommitMessageBundle::from_bundles(
             t_result,
             Some(pq_result),
