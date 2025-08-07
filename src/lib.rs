@@ -8,6 +8,7 @@ use openmls::{
     schedule::{ExternalPsk, PreSharedKeyId, Psk},
     storage::StorageProvider,
 };
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tap::Pipe as _;
 
@@ -24,7 +25,7 @@ pub mod messages;
 pub mod processing;
 pub mod welcome;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HpqGroupId {
     pub t_group_id: GroupId,
     pub pq_group_id: GroupId,
