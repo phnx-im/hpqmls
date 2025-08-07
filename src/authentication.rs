@@ -78,7 +78,7 @@ impl From<HpqCiphersuite> for HpqSignatureScheme {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize)]
 pub struct HpqSignatureKeyPair {
     pub t_signer: SignatureKeyPair,
     pub pq_signer: SignatureKeyPair,
