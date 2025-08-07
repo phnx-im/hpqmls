@@ -15,7 +15,9 @@ use tap::Pipe as _;
 use tls_codec::SecretVLBytes;
 
 use crate::{
-    authentication::HpqVerifyingKey, extension::HPQMLS_EXTENSION_ID, group_builder::GroupBuilder,
+    authentication::HpqVerifyingKey,
+    extension::HPQMLS_EXTENSION_ID,
+    group_builder::{DEFAULT_CIPHERSUITE, GroupBuilder},
 };
 
 pub mod authentication;
@@ -34,6 +36,12 @@ pub mod welcome;
 pub struct HpqCiphersuite {
     pub t_ciphersuite: Ciphersuite,
     pub pq_ciphersuite: Ciphersuite,
+}
+
+impl Default for HpqCiphersuite {
+    fn default() -> Self {
+        DEFAULT_CIPHERSUITE
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

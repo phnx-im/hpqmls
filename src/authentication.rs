@@ -7,7 +7,7 @@ use openmls_basic_credential::SignatureKeyPair;
 use serde::{Deserialize, Serialize};
 use tls_codec::{TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::HpqCiphersuite;
+use crate::{HpqCiphersuite, group_builder::DEFAULT_CIPHERSUITE};
 
 #[derive(Debug, Clone, PartialEq, TlsSize, TlsSerialize, TlsDeserialize)]
 pub struct HpqVerifyingKey {
@@ -61,6 +61,12 @@ pub trait HpqSigner {
 pub struct HpqSignatureScheme {
     pub t_signature_scheme: SignatureScheme,
     pub pq_signature_scheme: SignatureScheme,
+}
+
+impl Default for HpqSignatureScheme {
+    fn default() -> Self {
+        DEFAULT_CIPHERSUITE.into()
+    }
 }
 
 impl From<HpqCiphersuite> for HpqSignatureScheme {
