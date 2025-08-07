@@ -72,7 +72,7 @@ impl From<HpqCiphersuite> for HpqSignatureScheme {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct HpqSignatureKeyPair {
     pub t_signer: SignatureKeyPair,
     pub pq_signer: SignatureKeyPair,
