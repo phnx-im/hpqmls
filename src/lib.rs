@@ -3,21 +3,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use openmls::{
-    group::{GroupId, Member, MlsGroup},
-    prelude::{Ciphersuite, LeafNodeIndex, OpenMlsRand},
-    schedule::{ExternalPsk, PreSharedKeyId, Psk},
+    group::{
+        GroupId, Initial, Member, MlsGroup, PendingSafeExportSecretError,
+        ProcessedMessageSafeExportSecretError, SafeExportSecretError,
+    },
+    prelude::{Ciphersuite, CryptoError, LeafNodeIndex, OpenMlsRand},
+    schedule::{ExternalPsk, PreSharedKeyId, Psk, errors::PskError},
     storage::{OpenMlsProvider, StorageProvider},
 };
 use openmls_traits::storage::{CURRENT_VERSION, Entity, StorageProvider as _, traits};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tap::Pipe as _;
-use tls_codec::SecretVLBytes;
+use thiserror::Error;
+use tls_codec::{SecretVLBytes, Serialize as _, TlsSerialize, TlsSize};
 
 use crate::{
-    authentication::HpqVerifyingKey,
-    extension::HPQMLS_EXTENSION_ID,
-    group_builder::{DEFAULT_CIPHERSUITE, GroupBuilder},
+    authentication::HpqVerifyingKey, commit_builder::CreateCommitError,
+    extension::HPQMLS_EXTENSION_ID, group_builder::GroupBuilder,
 };
 
 pub mod authentication;
@@ -32,19 +34,29 @@ pub mod messages;
 pub mod processing;
 pub mod welcome;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Copy)]
 pub struct HpqCiphersuite {
     pub t_ciphersuite: Ciphersuite,
     pub pq_ciphersuite: Ciphersuite,
 }
 
-impl Default for HpqCiphersuite {
-    fn default() -> Self {
-        DEFAULT_CIPHERSUITE
+impl HpqCiphersuite {
+    pub const fn default_pq_conf_and_auth() -> Self {
+        Self {
+            t_ciphersuite: Ciphersuite::MLS_256_DHKEMP384_AES256GCM_SHA384_P384,
+            pq_ciphersuite: Ciphersuite::MLS_256_MLKEM1024_AES256GCM_SHA512_MLDSA87,
+        }
+    }
+
+    pub const fn default_pq_conf() -> Self {
+        Self {
+            t_ciphersuite: Ciphersuite::MLS_256_DHKEMP384_AES256GCM_SHA384_P384,
+            pq_ciphersuite: Ciphersuite::MLS_192_MLKEM1024_AES256GCM_SHA384_P384,
+        }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TlsSize, TlsSerialize)]
 pub struct HpqGroupId {
     pub t_group_id: GroupId,
     pub pq_group_id: GroupId,
@@ -71,6 +83,25 @@ impl HpqMlsGroup {
 
     pub fn commit_builder(&mut self) -> commit_builder::CommitBuilder {
         commit_builder::CommitBuilder::new(self)
+    }
+
+    /// Creates a commit builder for the T group with a GCE proposal to bump the
+    /// T group epoch of the HPQInfo extension.
+    pub fn t_commit_builder<E>(
+        &mut self,
+    ) -> Result<openmls::group::CommitBuilder<Initial>, CreateCommitError<E>> {
+        let mut current_hpq_info = self
+            .hpq_info()
+            .ok_or_else(|| CreateCommitError::MissingHpqInfo)?;
+        current_hpq_info.increment_epoch();
+
+        let mut current_extensions = self.t_group.extensions().clone();
+        current_extensions.add_or_replace(current_hpq_info.to_extension()?);
+
+        self.t_group
+            .commit_builder()
+            .propose_group_context_extensions(current_extensions)
+            .pipe(Ok)
     }
 
     pub fn t_group_mut(&mut self) -> &mut MlsGroup {
@@ -132,43 +163,69 @@ struct PskBundle {
 impl Entity<CURRENT_VERSION> for PskBundle {}
 impl traits::PskBundle<CURRENT_VERSION> for PskBundle {}
 
+#[derive(Debug, Error)]
+pub enum HpqPskError<StorageError> {
+    #[error(transparent)]
+    ExportFromGroup(#[from] SafeExportSecretError<StorageError>),
+    #[error(transparent)]
+    ExportFromProcessed(#[from] ProcessedMessageSafeExportSecretError),
+    #[error(transparent)]
+    ExportFromPending(#[from] PendingSafeExportSecretError<StorageError>),
+    #[error("Error deriving PSK ID: {0}")]
+    DerivingPskId(#[from] CryptoError),
+    #[error("OpenMLS PSK error: {0}")]
+    Psk(#[from] PskError),
+    #[error("Error serializing PSK ID: {0}")]
+    SerializingPskId(#[from] tls_codec::Error),
+}
+
+#[derive(Debug, Clone, TlsSize, TlsSerialize)]
+pub struct HpqPskId {
+    group_id: GroupId,
+    epoch: u64,
+}
+
 fn derive_and_store_psk<Provider: openmls::storage::OpenMlsProvider, const FROM_PENDING: bool>(
     provider: &Provider,
     group: &mut MlsGroup,
-    ciphersuite: Ciphersuite,
-) -> PreSharedKeyId {
+    t_ciphersuite: Ciphersuite,
+    //ciphersuite: Ciphersuite,
+) -> Result<PreSharedKeyId, HpqPskError<Provider::StorageError>> {
     let (psk_value, epoch) = if FROM_PENDING {
-        let psk_value = group
-            .safe_export_secret_from_pending(
-                provider.crypto(),
-                provider.storage(),
-                HPQMLS_EXTENSION_ID,
-            )
-            .unwrap();
+        let psk_value = group.safe_export_secret_from_pending(
+            provider.crypto(),
+            provider.storage(),
+            HPQMLS_EXTENSION_ID,
+        )?;
         let epoch = group.epoch().as_u64() + 1;
         (psk_value, epoch)
     } else {
-        let psk_value = group
-            .safe_export_secret(provider.crypto(), provider.storage(), HPQMLS_EXTENSION_ID)
-            .unwrap();
+        let psk_value =
+            group.safe_export_secret(provider.crypto(), provider.storage(), HPQMLS_EXTENSION_ID)?;
         (psk_value, group.epoch().as_u64())
     };
-    let mut psk_id_payload = group.group_id().as_slice().to_vec();
-    psk_id_payload.extend(epoch.to_be_bytes());
-    let psk_id = Sha256::digest(psk_id_payload).to_vec();
     // Prepare the PSK for the T group.
-    let psk_id = psk_id
-        .clone()
-        .pipe(ExternalPsk::new)
-        .pipe(Psk::External)
-        .pipe(|psk| PreSharedKeyId::new(ciphersuite, provider.rand(), psk))
-        .unwrap();
-    store_psk(provider, &psk_id, &psk_value);
-    psk_id
+    HpqPskId {
+        group_id: group.group_id().clone(),
+        epoch,
+    }
+    .tls_serialize_detached()?
+    .pipe(ExternalPsk::new)
+    .pipe(Psk::External)
+    .pipe(|psk| PreSharedKeyId::new(t_ciphersuite, provider.rand(), psk))?
+    .pipe(|id| store_psk(provider, id, &psk_value))
 }
 
-fn store_psk<Provider: OpenMlsProvider>(provider: &Provider, psk_id: &PreSharedKeyId, psk: &[u8]) {
+fn store_psk<Provider: OpenMlsProvider>(
+    provider: &Provider,
+    psk_id: PreSharedKeyId,
+    psk: &[u8],
+) -> Result<PreSharedKeyId, HpqPskError<Provider::StorageError>> {
     // Delete any existing PSK with the same ID.
-    provider.storage().delete_psk::<Psk>(psk_id.psk()).unwrap();
-    psk_id.store(provider, psk).unwrap();
+    provider
+        .storage()
+        .delete_psk::<Psk>(psk_id.psk())
+        .map_err(|_| HpqPskError::Psk(PskError::Storage))?;
+    psk_id.store(provider, psk)?;
+    Ok(psk_id)
 }

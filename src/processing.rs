@@ -8,10 +8,14 @@ use openmls::{
     schedule::{ExternalPsk, PreSharedKeyId, Psk},
     storage::OpenMlsProvider,
 };
-use sha2::{Digest as _, Sha256};
 use tap::Pipe as _;
+use thiserror::Error;
+use tls_codec::Serialize;
 
-use crate::{HpqMlsGroup, extension::HPQMLS_EXTENSION_ID, messages::HpqMlsMessageIn, store_psk};
+use crate::{
+    HpqMlsGroup, HpqPskError, HpqPskId, extension::HPQMLS_EXTENSION_ID, messages::HpqMlsMessageIn,
+    store_psk,
+};
 
 pub struct HpqProcessedMessage {
     pub t_message: ProcessedMessage,
@@ -54,6 +58,14 @@ fn into_protocol_message(
     }
 }
 
+#[derive(Debug, Error)]
+pub enum HpqProcessMessageError<StorageError> {
+    #[error("Failed to process message: {0}")]
+    Processing(#[from] ProcessMessageError),
+    #[error(transparent)]
+    Psk(#[from] HpqPskError<StorageError>),
+}
+
 impl HpqMlsGroup {
     /// Parses incoming messages from the DS. Checks for syntactic errors and
     /// makes some semantic checks as well. If the input is an encrypted
@@ -68,7 +80,8 @@ impl HpqMlsGroup {
         &mut self,
         provider: &Provider,
         message: HpqMlsMessageIn,
-    ) -> Result<HpqProcessedMessage, ProcessMessageError> {
+    ) -> Result<HpqProcessedMessage, HpqProcessMessageError<Provider::StorageError>> {
+        // We only export a PSK if we process a PQ message
         let pq_message = match message.pq_message {
             None => None,
             Some(pq_message) => {
@@ -78,19 +91,20 @@ impl HpqMlsGroup {
                     .process_message(provider, pq_protocol_message)?;
                 let psk_value = pq_processed_message
                     .safe_export_secret(provider.crypto(), HPQMLS_EXTENSION_ID)
-                    .unwrap();
-                let mut psk_id_payload = self.pq_group.group_id().as_slice().to_vec();
+                    .map_err(HpqPskError::ExportFromProcessed)?;
+
                 let next_epoch = self.pq_group.epoch().as_u64() + 1;
-                psk_id_payload.extend(next_epoch.to_be_bytes());
-                let psk_id = Sha256::digest(psk_id_payload)
-                    .to_vec()
-                    .pipe(ExternalPsk::new)
-                    .pipe(Psk::External)
-                    .pipe(|psk| {
-                        PreSharedKeyId::new(self.t_group.ciphersuite(), provider.rand(), psk)
-                    })
-                    .unwrap();
-                store_psk(provider, &psk_id, &psk_value);
+                HpqPskId {
+                    group_id: self.pq_group.group_id().clone(),
+                    epoch: next_epoch,
+                }
+                .tls_serialize_detached()
+                .map_err(HpqPskError::SerializingPskId)?
+                .pipe(ExternalPsk::new)
+                .pipe(Psk::External)
+                .pipe(|psk| PreSharedKeyId::new(self.t_group.ciphersuite(), provider.rand(), psk))
+                .map_err(HpqPskError::DerivingPskId)?
+                .pipe(|id| store_psk(provider, id, &psk_value))?;
                 Some(pq_processed_message)
             }
         };

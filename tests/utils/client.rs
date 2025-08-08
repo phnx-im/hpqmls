@@ -4,16 +4,10 @@
 
 use hpqmls::{
     HpqCiphersuite,
-    authentication::{HpqCredentialWithKey, HpqSignatureKeyPair},
-    group_builder::{DEFAULT_CIPHERSUITE, DEFAULT_PQ_CIPHERSUITE, DEFAULT_T_CIPHERSUITE},
+    authentication::{HpqCredentialWithKey, HpqSignatureKeyPair, HpqSignatureScheme},
     messages::HpqKeyPackage,
 };
-use openmls::{
-    prelude::{BasicCredential, CredentialWithKey},
-    storage::OpenMlsProvider,
-};
-
-use super::*;
+use openmls::storage::OpenMlsProvider;
 
 pub struct Client<Provider> {
     pub signer: HpqSignatureKeyPair,
@@ -22,8 +16,8 @@ pub struct Client<Provider> {
 }
 
 impl<Provider: OpenMlsProvider> Client<Provider> {
-    pub fn new(identity: &str, provider: Provider) -> Self {
-        let keypair = HpqSignatureKeyPair::new(DEFAULT_CIPHERSUITE.into());
+    pub fn new(identity: &str, signature_scheme: HpqSignatureScheme, provider: Provider) -> Self {
+        let keypair = HpqSignatureKeyPair::new(signature_scheme).unwrap();
         let credential_with_key = HpqCredentialWithKey::new(identity.as_bytes(), &keypair);
 
         Client {
@@ -33,11 +27,11 @@ impl<Provider: OpenMlsProvider> Client<Provider> {
         }
     }
 
-    pub fn generate_key_package(&self) -> HpqKeyPackage {
+    pub fn generate_key_package(&self, cipersuite: HpqCiphersuite) -> HpqKeyPackage {
         HpqKeyPackage::builder()
             .build(
                 &self.provider,
-                DEFAULT_CIPHERSUITE,
+                cipersuite,
                 &self.signer,
                 self.credential_with_key.clone(),
             )

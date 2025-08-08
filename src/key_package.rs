@@ -7,11 +7,13 @@ use std::collections::HashSet;
 use openmls::{
     prelude::{
         Capabilities, Ciphersuite, Extensions, KeyPackageBuilder, KeyPackageBundle,
-        KeyPackageNewError, KeyPackageVerifyError, Lifetime, OpenMlsCrypto, ProtocolVersion,
+        KeyPackageNewError as OpenMlsKeyPackageNewError, KeyPackageVerifyError, Lifetime,
+        OpenMlsCrypto, ProtocolVersion,
     },
     storage::OpenMlsProvider,
 };
-use tls_codec::{Deserialize as _, Serialize as _};
+use tap::Pipe as _;
+use thiserror::Error;
 
 use crate::{
     HpqCiphersuite,
@@ -19,6 +21,14 @@ use crate::{
     extension::ensure_extension_support,
     messages::{HpqKeyPackage, HpqKeyPackageIn},
 };
+
+#[derive(Error, Debug, PartialEq, Clone)]
+pub enum KeyPackageNewError {
+    #[error(transparent)]
+    OpenMls(#[from] OpenMlsKeyPackageNewError),
+    #[error("Unsupported ciphersuite")]
+    UnsupportedCiphersuite(#[from] tls_codec::Error),
+}
 
 pub struct HpqKeyPackageBuilder {
     capabilities: Capabilities,
@@ -100,12 +110,10 @@ impl HpqKeyPackageBuilder {
         signer: &impl HpqSigner,
         credential_with_key: HpqCredentialWithKey,
     ) -> Result<HpqKeyPackageBundle, KeyPackageNewError> {
-        let capabilities = ensure_extension_support(self.capabilities);
-        let capabilities = ensure_ciphersuite_support(
-            capabilities,
-            ciphersuite.t_ciphersuite,
-            ciphersuite.pq_ciphersuite,
-        );
+        let capabilities = self
+            .capabilities
+            .pipe(ensure_extension_support)?
+            .pipe(|c| ensure_ciphersuite_support(c, ciphersuite))?;
 
         self.t_kp_builder = self
             .t_kp_builder
@@ -153,20 +161,15 @@ impl HpqKeyPackageIn {
 
 pub(super) fn ensure_ciphersuite_support(
     capabilities: Capabilities,
-    t_ciphersuite: Ciphersuite,
-    pq_ciphersuite: Ciphersuite,
-) -> Capabilities {
+    ciphersuite: HpqCiphersuite,
+) -> Result<Capabilities, tls_codec::Error> {
     let mut ciphersuites: HashSet<Ciphersuite> = capabilities
         .ciphersuites()
         .iter()
-        .map(|cs| {
-            // TODO: Stupid workaround
-            let serialized_ciphersuite = cs.tls_serialize_detached().unwrap();
-            Ciphersuite::tls_deserialize_exact(&serialized_ciphersuite).unwrap()
-        })
-        .collect();
-    ciphersuites.insert(t_ciphersuite);
-    ciphersuites.insert(pq_ciphersuite);
+        .map(|&cs| cs.try_into())
+        .collect::<Result<_, _>>()?;
+    ciphersuites.insert(ciphersuite.t_ciphersuite);
+    ciphersuites.insert(ciphersuite.pq_ciphersuite);
     let ciphersuites: Vec<Ciphersuite> = ciphersuites.into_iter().collect();
     Capabilities::new(
         Some(capabilities.versions()),
@@ -175,4 +178,5 @@ pub(super) fn ensure_ciphersuite_support(
         Some(capabilities.proposals()),
         Some(capabilities.credentials()),
     )
+    .pipe(Ok)
 }

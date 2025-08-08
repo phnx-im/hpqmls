@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use hpqmls::HpqMlsGroup;
-use openmls_basic_credential::SignatureKeyPair;
 
 pub mod client;
 
@@ -24,6 +23,7 @@ pub fn assert_groups_eq(group1: &mut HpqMlsGroup, group2: &mut HpqMlsGroup) {
     );
 }
 
+#[allow(dead_code)]
 pub fn init_logging() {
     let _ = env_logger::builder().is_test(true).try_init();
 }

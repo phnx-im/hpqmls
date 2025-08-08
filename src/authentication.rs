@@ -2,13 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use openmls::prelude::{BasicCredential, CredentialWithKey, SignaturePublicKey, SignatureScheme};
+use openmls::prelude::{
+    BasicCredential, CredentialWithKey, CryptoError, SignaturePublicKey, SignatureScheme,
+};
 use openmls_basic_credential::SignatureKeyPair;
 use openmls_traits::storage::{self, CURRENT_VERSION};
 use serde::{Deserialize, Serialize};
+use tap::Pipe;
 use tls_codec::{Serialize as _, TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::{HpqCiphersuite, group_builder::DEFAULT_CIPHERSUITE};
+use crate::HpqCiphersuite;
 
 #[derive(Debug, Clone, PartialEq, TlsSize, TlsSerialize, TlsDeserialize)]
 pub struct HpqVerifyingKey {
@@ -18,6 +21,8 @@ pub struct HpqVerifyingKey {
 
 impl HpqVerifyingKey {
     pub fn to_bytes(&self) -> Vec<u8> {
+        // We unwrap here, because we know that public keys are not going to be
+        // too long for the TLS codec to handle.
         self.tls_serialize_detached().unwrap()
     }
 }
@@ -70,12 +75,6 @@ pub struct HpqSignatureScheme {
     pub pq_signature_scheme: SignatureScheme,
 }
 
-impl Default for HpqSignatureScheme {
-    fn default() -> Self {
-        DEFAULT_CIPHERSUITE.into()
-    }
-}
-
 impl From<HpqCiphersuite> for HpqSignatureScheme {
     fn from(ciphersuite: HpqCiphersuite) -> Self {
         Self {
@@ -92,13 +91,14 @@ pub struct HpqSignatureKeyPair {
 }
 
 impl HpqSignatureKeyPair {
-    pub fn new(signature_scheme: HpqSignatureScheme) -> Self {
-        let t_signer = SignatureKeyPair::new(signature_scheme.t_signature_scheme).unwrap();
-        let pq_signer = SignatureKeyPair::new(signature_scheme.pq_signature_scheme).unwrap();
+    pub fn new(signature_scheme: HpqSignatureScheme) -> Result<Self, CryptoError> {
+        let t_signer = SignatureKeyPair::new(signature_scheme.t_signature_scheme)?;
+        let pq_signer = SignatureKeyPair::new(signature_scheme.pq_signature_scheme)?;
         Self {
             t_signer,
             pq_signer,
         }
+        .pipe(Ok)
     }
 
     pub fn id(&self) -> HpqStorageId {

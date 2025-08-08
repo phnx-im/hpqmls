@@ -6,9 +6,10 @@ use openmls::{
     group::{GroupEpoch, GroupId},
     prelude::{Capabilities, Ciphersuite, Extension, ExtensionType, UnknownExtension},
 };
+use tap::Pipe;
 use tls_codec::{Deserialize as _, Serialize as _, TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::HpqMlsGroup;
+use crate::{HpqCiphersuite, HpqMlsGroup};
 
 pub(super) const HPQMLS_EXTENSION_ID: u16 = 0xFF01;
 pub(super) const HPQMLS_EXTENSION_TYPE: ExtensionType = ExtensionType::Unknown(HPQMLS_EXTENSION_ID);
@@ -30,6 +31,15 @@ impl From<PqtMode> for bool {
     }
 }
 
+impl PqtMode {
+    pub fn default_ciphersuite(&self) -> HpqCiphersuite {
+        match self {
+            PqtMode::ConfOnly => HpqCiphersuite::default_pq_conf(),
+            PqtMode::ConfAndAuth => HpqCiphersuite::default_pq_conf_and_auth(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize)]
 pub struct HpqMlsInfo {
     pub t_session_group_id: GroupId,
@@ -42,10 +52,11 @@ pub struct HpqMlsInfo {
 }
 
 impl HpqMlsInfo {
-    pub(super) fn to_extension(&self) -> Extension {
-        let hpq_mls_info = self.tls_serialize_detached().unwrap();
-        let extension_content = UnknownExtension(hpq_mls_info);
-        Extension::Unknown(HPQMLS_EXTENSION_ID, extension_content)
+    pub(super) fn to_extension(&self) -> Result<Extension, tls_codec::Error> {
+        self.tls_serialize_detached()?
+            .pipe(UnknownExtension)
+            .pipe(|ue| Extension::Unknown(HPQMLS_EXTENSION_ID, ue))
+            .pipe(Ok)
     }
 
     pub(super) fn increment_epoch(&mut self) {
@@ -54,7 +65,9 @@ impl HpqMlsInfo {
     }
 }
 
-pub(super) fn ensure_extension_support(capabilities: Capabilities) -> Capabilities {
+pub(super) fn ensure_extension_support(
+    capabilities: Capabilities,
+) -> Result<Capabilities, tls_codec::Error> {
     let mut extensions = capabilities.extensions().to_vec();
     if !extensions.contains(&HPQMLS_EXTENSION_TYPE) {
         extensions.push(HPQMLS_EXTENSION_TYPE);
@@ -65,12 +78,8 @@ pub(super) fn ensure_extension_support(capabilities: Capabilities) -> Capabiliti
     let ciphersuites: Vec<Ciphersuite> = capabilities
         .ciphersuites()
         .iter()
-        .map(|cs| {
-            // TODO: Stupid workaround
-            let serialized_ciphersuite = cs.tls_serialize_detached().unwrap();
-            Ciphersuite::tls_deserialize_exact(&serialized_ciphersuite).unwrap()
-        })
-        .collect();
+        .map(|&cs| cs.try_into())
+        .collect::<Result<Vec<_>, _>>()?;
     Capabilities::new(
         Some(capabilities.versions()),
         Some(&ciphersuites),
@@ -78,16 +87,16 @@ pub(super) fn ensure_extension_support(capabilities: Capabilities) -> Capabiliti
         Some(capabilities.proposals()),
         Some(capabilities.credentials()),
     )
+    .pipe(Ok)
 }
 
 impl HpqMlsGroup {
-    pub fn hpq_info(&self) -> HpqMlsInfo {
-        let current_extensions = &self
-            .t_group
+    pub fn hpq_info(&self) -> Option<HpqMlsInfo> {
+        self.t_group
             .extensions()
-            .unknown(HPQMLS_EXTENSION_ID)
-            .unwrap()
-            .0;
-        HpqMlsInfo::tls_deserialize_exact(current_extensions).unwrap()
+            .unknown(HPQMLS_EXTENSION_ID)?
+            .0
+            .pipe_as_ref::<'_, [u8], _>(HpqMlsInfo::tls_deserialize_exact)
+            .ok()
     }
 }

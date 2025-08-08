@@ -3,15 +3,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use openmls::{
-    group::{MlsGroupJoinConfig, StagedWelcome, WelcomeError},
+    group::{MlsGroupJoinConfig, StagedWelcome, WelcomeError as OpenMlsWelcomeError},
     storage::OpenMlsProvider,
 };
+use thiserror::Error;
 
 use crate::{
-    HpqMlsGroup, derive_and_store_psk,
-    group_builder::DEFAULT_T_CIPHERSUITE,
+    HpqMlsGroup, HpqPskError, derive_and_store_psk,
     messages::{HpqRatchetTreeIn, HpqWelcome},
 };
+
+#[derive(Debug, Error)]
+pub enum WelcomeError<StorageError> {
+    #[error("Failed to process welcome message: {0}")]
+    Processing(#[from] OpenMlsWelcomeError<StorageError>),
+    #[error(transparent)]
+    Psk(#[from] HpqPskError<StorageError>),
+}
 
 pub struct StagedHpqWelcome {
     pub t_staged_welcome: StagedWelcome,
@@ -38,7 +46,9 @@ impl HpqMlsGroup {
         )?;
         let mut pq_group = pq_staged_welcome.into_group(provider)?;
 
-        derive_and_store_psk::<_, false>(provider, &mut pq_group, DEFAULT_T_CIPHERSUITE);
+        let t_ciphersuite = welcome.t_welcome.ciphersuite();
+
+        derive_and_store_psk::<_, false>(provider, &mut pq_group, t_ciphersuite)?;
 
         let t_group = StagedWelcome::new_from_welcome(
             provider,

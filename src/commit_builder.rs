@@ -4,23 +4,36 @@
 
 use openmls::{
     group::{
-        CommitBuilder as MlsGroupCommitBuilder, CommitMessageBundle, CreateCommitError, Initial,
-        QueuedProposal,
+        CommitBuilder as MlsGroupCommitBuilder, CommitBuilderStageError, CommitMessageBundle,
+        CreateCommitError as OpenMlsCreateCommitError, Initial, QueuedProposal,
     },
     prelude::{LeafNodeIndex, LeafNodeParameters, PreSharedKeyProposal, Proposal, ProposalType},
     storage::OpenMlsProvider,
 };
 use tap::Pipe as _;
-use tls_codec::Deserialize;
+use thiserror::Error;
 
 use crate::{
-    HpqMlsGroup,
+    HpqMlsGroup, HpqPskError,
     authentication::HpqSigner,
     derive_and_store_psk,
-    extension::{HPQMLS_EXTENSION_ID, HpqMlsInfo},
     external_commit::HpqGroupInfo,
     messages::{HpqKeyPackage, HpqMlsMessageOut, HpqWelcome},
 };
+
+#[derive(Debug, Error)]
+pub enum CreateCommitError<StorageError> {
+    #[error("Failed to build commit: {0}")]
+    BuildCommit(#[from] OpenMlsCreateCommitError),
+    #[error("Failed to stage commit: {0}")]
+    StageCommit(#[from] CommitBuilderStageError<StorageError>),
+    #[error("Missing HPQInfo extension")]
+    MissingHpqInfo,
+    #[error("Malformed extension: {0}")]
+    MalformedExtension(#[from] tls_codec::Error),
+    #[error(transparent)]
+    Psk(#[from] HpqPskError<StorageError>),
+}
 
 pub struct HpqCommitMessageBundle {
     pub commit: HpqMlsMessageOut,
@@ -31,21 +44,21 @@ pub struct HpqCommitMessageBundle {
 impl HpqCommitMessageBundle {
     fn from_bundles(t_bundle: CommitMessageBundle, pq_bundle: Option<CommitMessageBundle>) -> Self {
         let (t_commit, t_welcome, t_group_info) = t_bundle.into_contents();
-        let (pq_commit, pq_welcome, pq_group_info) = match pq_bundle {
-            Some(bundle) => {
+        let (pq_commit, pq_welcome, pq_group_info) =
+            pq_bundle.map_or((None, None, None), |bundle| {
                 let (commit, welcome, group_info) = bundle.into_contents();
                 (Some(commit), welcome, group_info)
-            }
-            None => (None, None, None),
-        };
+            });
+
         let commit = HpqMlsMessageOut {
             t_message: t_commit,
             pq_message: pq_commit,
         };
+
         let welcome = match (t_welcome, pq_welcome) {
-            (Some(t_welcome), Some(pq_welcome)) => Some(HpqWelcome {
-                t_welcome,
-                pq_welcome,
+            (Some(t), Some(pq)) => Some(HpqWelcome {
+                t_welcome: t,
+                pq_welcome: pq,
             }),
             (None, None) => None,
             _ => {
@@ -53,10 +66,12 @@ impl HpqCommitMessageBundle {
                 None
             }
         };
-        let group_info = t_group_info.map(|t_group_info| HpqGroupInfo {
-            t_group_info: t_group_info.into(),
-            pq_group_info: pq_group_info.map(|pq_group_info| pq_group_info.into()),
+
+        let group_info = t_group_info.map(|t| HpqGroupInfo {
+            t_group_info: t.into(),
+            pq_group_info: pq_group_info.map(|pq| pq.into()),
         });
+
         Self {
             commit,
             welcome,
@@ -227,44 +242,46 @@ impl<'a> CommitBuilder<'a> {
         signer: &S,
         t_f: impl FnMut(&QueuedProposal) -> bool,
         pq_f: impl FnMut(&QueuedProposal) -> bool,
-    ) -> Result<HpqCommitMessageBundle, CreateCommitError> {
+    ) -> Result<HpqCommitMessageBundle, CreateCommitError<Provider::StorageError>> {
+        let mut current_hpq_info = self
+            .group
+            .hpq_info()
+            .ok_or_else(|| CreateCommitError::MissingHpqInfo)?;
+        current_hpq_info.increment_epoch();
+
         let mut current_extensions = self.group.t_group.extensions().clone();
-        let extension_bytes = current_extensions
-            .unknown(HPQMLS_EXTENSION_ID)
-            .unwrap()
-            .clone()
-            .0;
-        let mut current_extension = HpqMlsInfo::tls_deserialize_exact(&extension_bytes).unwrap();
-        current_extension.increment_epoch();
-        current_extensions.add_or_replace(current_extension.to_extension());
+        current_extensions.add_or_replace(current_hpq_info.to_extension()?);
 
         // Create the PQ commit first s.t. we can export the PSK for the T group.
-        let mut pq_builder = self.group.pq_group.commit_builder();
-        pq_builder = self.values.apply::<false>(pq_builder);
-        let pq_result = pq_builder
+        let pq_result = self
+            .group
+            .pq_group
+            .commit_builder()
+            .pipe(|b| self.values.apply::<false>(b))
             .propose_group_context_extensions(current_extensions.clone())
             .load_psks(provider.storage())?
             .build(provider.rand(), provider.crypto(), signer.pq_signer(), pq_f)?
-            .stage_commit(provider)
-            .unwrap();
+            .stage_commit(provider)?;
+
         // Prepare the PSK for the T group.
-        let psk_id = derive_and_store_psk::<_, true>(
+        let psk_proposal = derive_and_store_psk::<_, true>(
             provider,
             &mut self.group.pq_group,
             self.group.t_group.ciphersuite(),
-        );
-        let psk_proposal = psk_id
-            .pipe(PreSharedKeyProposal::new)
-            .pipe(Proposal::PreSharedKey);
-        let mut t_builder = self.group.t_group.commit_builder();
-        t_builder = self.values.apply::<true>(t_builder);
-        let t_result = t_builder
+        )?
+        .pipe(PreSharedKeyProposal::new)
+        .pipe(Proposal::PreSharedKey);
+
+        let t_result = self
+            .group
+            .t_group
+            .commit_builder()
+            .pipe(|b| self.values.apply::<true>(b))
             .add_proposal(psk_proposal)
             .propose_group_context_extensions(current_extensions)
             .load_psks(provider.storage())?
             .build(provider.rand(), provider.crypto(), signer.t_signer(), t_f)?
-            .stage_commit(provider)
-            .unwrap();
+            .stage_commit(provider)?;
         Ok(HpqCommitMessageBundle::from_bundles(
             t_result,
             Some(pq_result),

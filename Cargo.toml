@@ -19,8 +19,8 @@ openmls_traits = { git = "https://github.com/openmls/openmls.git", branch = "kon
     "extensions-draft-08",
 ] }
 serde = "1.0.219"
-sha2 = "0.10.9"
 tap = "1.0.1"
+thiserror = "2.0.12"
 tls_codec = "0.4.2"
 
 [dev-dependencies]

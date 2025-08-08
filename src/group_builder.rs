@@ -3,14 +3,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use openmls::{
-    group::{GroupEpoch, GroupId, MlsGroupBuilder, NewGroupError, WireFormatPolicy},
+    group::{
+        GroupEpoch, GroupId, MlsGroupBuilder, NewGroupError as OpenMlsNewGroupError,
+        WireFormatPolicy,
+    },
     prelude::{
-        Capabilities, Ciphersuite, Extension, ExtensionType, Extensions, InvalidExtensionError,
-        Lifetime, RequiredCapabilitiesExtension, SenderRatchetConfiguration,
+        Capabilities, Extension, ExtensionType, Extensions, InvalidExtensionError, Lifetime,
+        RequiredCapabilitiesExtension, SenderRatchetConfiguration,
     },
     storage::OpenMlsProvider,
     treesync::errors::LeafNodeValidationError,
 };
+use tap::Pipe as _;
+use thiserror::Error;
 
 use crate::{
     HpqCiphersuite, HpqGroupId, HpqMlsGroup,
@@ -19,14 +24,19 @@ use crate::{
     key_package::ensure_ciphersuite_support,
 };
 
-pub const DEFAULT_T_CIPHERSUITE: Ciphersuite = Ciphersuite::MLS_256_DHKEMP384_AES256GCM_SHA384_P384;
-pub const DEFAULT_PQ_CIPHERSUITE: Ciphersuite =
-    Ciphersuite::MLS_256_MLKEM1024_AES256GCM_SHA512_MLDSA87;
+#[derive(Error, Debug, PartialEq, Clone)]
+pub enum NewGroupError<StorageError> {
+    #[error(transparent)]
+    NewGroup(#[from] OpenMlsNewGroupError<StorageError>),
+    #[error("Error serializing HPQInfo extension: {0}")]
+    InvalidExtension(#[from] tls_codec::Error),
+}
 
-pub const DEFAULT_CIPHERSUITE: HpqCiphersuite = HpqCiphersuite {
-    t_ciphersuite: DEFAULT_T_CIPHERSUITE,
-    pq_ciphersuite: DEFAULT_PQ_CIPHERSUITE,
-};
+impl<StorageError> From<InvalidExtensionError> for NewGroupError<StorageError> {
+    fn from(err: InvalidExtensionError) -> Self {
+        OpenMlsNewGroupError::InvalidExtensions(err).into()
+    }
+}
 
 #[derive(Debug)]
 pub struct GroupBuilder {
@@ -36,8 +46,6 @@ pub struct GroupBuilder {
     // later.
     group_ids: Option<HpqGroupId>,
     mode: PqtMode,
-    t_ciphersuite: Ciphersuite,
-    pq_ciphersuite: Ciphersuite,
     capabilities: Capabilities,
     t_extensions: Extensions,
     pq_extensions: Extensions,
@@ -50,8 +58,6 @@ impl Default for GroupBuilder {
             pq_group_builder: Default::default(),
             group_ids: Default::default(),
             mode: Default::default(),
-            t_ciphersuite: DEFAULT_T_CIPHERSUITE,
-            pq_ciphersuite: DEFAULT_PQ_CIPHERSUITE,
             capabilities: Default::default(),
             t_extensions: Default::default(),
             pq_extensions: Default::default(),
@@ -87,10 +93,16 @@ impl GroupBuilder {
         signer: &impl HpqSigner,
         credential_with_key: HpqCredentialWithKey,
     ) -> Result<HpqMlsGroup, NewGroupError<Provider::StorageError>> {
+        let ciphersuite = match self.mode {
+            PqtMode::ConfOnly => HpqCiphersuite::default_pq_conf(),
+            PqtMode::ConfAndAuth => HpqCiphersuite::default_pq_conf_and_auth(),
+        };
+
         // Add extension to capabilities.
-        let capabilities = ensure_extension_support(self.capabilities);
-        let capabilities =
-            ensure_ciphersuite_support(capabilities, self.t_ciphersuite, self.pq_ciphersuite);
+        let capabilities = self
+            .capabilities
+            .pipe(ensure_extension_support)?
+            .pipe(|c| ensure_ciphersuite_support(c, ciphersuite))?;
 
         // Add extension to extensions
         let hpq_group_id = self
@@ -98,12 +110,12 @@ impl GroupBuilder {
             .unwrap_or_else(|| HpqGroupId::random(provider.rand()));
 
         // Add required capabilities extension
-        let required_capabilities = RequiredCapabilitiesExtension::new(
+        let rc_extension = RequiredCapabilitiesExtension::new(
             &[HPQMLS_EXTENSION_TYPE, ExtensionType::RequiredCapabilities],
             &[],
             &[],
-        );
-        let rc_extension = Extension::RequiredCapabilities(required_capabilities);
+        )
+        .pipe(Extension::RequiredCapabilities);
 
         self.t_extensions.add_or_replace(rc_extension.clone());
         self.pq_extensions.add_or_replace(rc_extension);
@@ -112,37 +124,39 @@ impl GroupBuilder {
             t_session_group_id: hpq_group_id.t_group_id.clone(),
             pq_session_group_id: hpq_group_id.pq_group_id.clone(),
             mode: self.mode,
-            t_cipher_suite: self.t_ciphersuite,
-            pq_cipher_suite: self.pq_ciphersuite,
+            t_cipher_suite: ciphersuite.t_ciphersuite,
+            pq_cipher_suite: ciphersuite.pq_ciphersuite,
             t_epoch: GroupEpoch::from(0),
             pq_epoch: GroupEpoch::from(0),
         }
-        .to_extension();
+        .to_extension()?;
 
         self.t_extensions.add_or_replace(hpq_mls_extension.clone());
         self.pq_extensions.add_or_replace(hpq_mls_extension);
 
-        self.t_group_builder = self
+        let t_group = self
             .t_group_builder
+            .ciphersuite(ciphersuite.t_ciphersuite)
             .with_group_context_extensions(self.t_extensions)?
             .with_group_id(hpq_group_id.t_group_id.clone())
-            .with_capabilities(capabilities.clone());
-        self.pq_group_builder = self
+            .with_capabilities(capabilities.clone())
+            .build(
+                provider,
+                signer.t_signer(),
+                credential_with_key.t_credential,
+            )?;
+        let pq_group = self
             .pq_group_builder
+            .ciphersuite(ciphersuite.pq_ciphersuite)
             .with_group_context_extensions(self.pq_extensions)?
             .with_group_id(hpq_group_id.pq_group_id.clone())
-            .with_capabilities(capabilities);
+            .with_capabilities(capabilities)
+            .build(
+                provider,
+                signer.pq_signer(),
+                credential_with_key.pq_credential,
+            )?;
 
-        let t_group = self.t_group_builder.build(
-            provider,
-            signer.t_signer(),
-            credential_with_key.t_credential,
-        )?;
-        let pq_group = self.pq_group_builder.build(
-            provider,
-            signer.pq_signer(),
-            credential_with_key.pq_credential,
-        )?;
         Ok(HpqMlsGroup { pq_group, t_group })
     }
 
@@ -222,15 +236,6 @@ impl GroupBuilder {
     pub fn lifetime(mut self, lifetime: Lifetime) -> Self {
         self.t_group_builder = self.t_group_builder.lifetime(lifetime);
         self.pq_group_builder = self.pq_group_builder.lifetime(lifetime);
-        self
-    }
-
-    /// Sets the `ciphersuite` of the MlsGroup.
-    pub fn ciphersuite(mut self, ciphersuite: HpqCiphersuite) -> Self {
-        self.t_group_builder = self.t_group_builder.ciphersuite(ciphersuite.t_ciphersuite);
-        self.pq_group_builder = self
-            .pq_group_builder
-            .ciphersuite(ciphersuite.pq_ciphersuite);
         self
     }
 
