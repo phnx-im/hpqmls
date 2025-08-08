@@ -170,5 +170,5 @@ fn derive_and_store_psk<Provider: openmls::storage::OpenMlsProvider, const FROM_
 fn store_psk<Provider: OpenMlsProvider>(provider: &Provider, psk_id: &PreSharedKeyId, psk: &[u8]) {
     // Delete any existing PSK with the same ID.
     provider.storage().delete_psk::<Psk>(psk_id.psk()).unwrap();
-    psk_id.store(provider, &psk).unwrap();
+    psk_id.store(provider, psk).unwrap();
 }
