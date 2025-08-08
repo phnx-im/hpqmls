@@ -6,7 +6,7 @@ use openmls::prelude::{BasicCredential, CredentialWithKey, SignaturePublicKey, S
 use openmls_basic_credential::SignatureKeyPair;
 use openmls_traits::storage::{self, CURRENT_VERSION};
 use serde::{Deserialize, Serialize};
-use tls_codec::{TlsDeserialize, TlsSerialize, TlsSize};
+use tls_codec::{Serialize as _, TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{HpqCiphersuite, group_builder::DEFAULT_CIPHERSUITE};
 
@@ -14,6 +14,12 @@ use crate::{HpqCiphersuite, group_builder::DEFAULT_CIPHERSUITE};
 pub struct HpqVerifyingKey {
     pub t_verifying_key: SignaturePublicKey,
     pub pq_verifying_key: SignaturePublicKey,
+}
+
+impl HpqVerifyingKey {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.tls_serialize_detached().unwrap()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
