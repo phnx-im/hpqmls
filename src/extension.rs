@@ -11,8 +11,8 @@ use tls_codec::{Deserialize as _, Serialize as _, TlsDeserialize, TlsSerialize, 
 
 use crate::{HpqCiphersuite, HpqMlsGroup};
 
-pub(super) const HPQMLS_EXTENSION_ID: u16 = 0xFF01;
-pub(super) const HPQMLS_EXTENSION_TYPE: ExtensionType = ExtensionType::Unknown(HPQMLS_EXTENSION_ID);
+pub const HPQMLS_EXTENSION_ID: u16 = 0xFF01;
+pub const HPQMLS_EXTENSION_TYPE: ExtensionType = ExtensionType::Unknown(HPQMLS_EXTENSION_ID);
 
 #[derive(Default, Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize)]
 #[repr(u8)]
