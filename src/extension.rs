@@ -14,7 +14,7 @@ use crate::{HpqCiphersuite, HpqMlsGroup};
 pub const HPQMLS_EXTENSION_ID: u16 = 0xFF01;
 pub const HPQMLS_EXTENSION_TYPE: ExtensionType = ExtensionType::Unknown(HPQMLS_EXTENSION_ID);
 
-#[derive(Default, Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize)]
+#[derive(Default, Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, Copy)]
 #[repr(u8)]
 pub enum PqtMode {
     #[default]
