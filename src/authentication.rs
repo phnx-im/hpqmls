@@ -70,6 +70,7 @@ pub trait HpqSigner {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct HpqSignatureScheme {
     pub t_signature_scheme: SignatureScheme,
     pub pq_signature_scheme: SignatureScheme,
