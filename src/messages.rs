@@ -4,13 +4,15 @@
 
 use openmls::{
     prelude::{
-        KeyPackage, KeyPackageIn, MlsMessageBodyIn, MlsMessageIn, MlsMessageOut, ProtocolVersion,
-        RatchetTreeIn, Welcome,
+        Ciphersuite, KeyPackage, KeyPackageIn, MlsMessageBodyIn, MlsMessageIn, MlsMessageOut,
+        ProtocolVersion, RatchetTreeIn, Welcome,
     },
     treesync::RatchetTree,
 };
 use serde::{Deserialize, Serialize};
 use tls_codec::{Deserialize as _, Serialize as _, TlsDeserialize, TlsSerialize, TlsSize};
+
+use crate::extension::PqtMode;
 
 #[derive(Debug, Clone, TlsDeserialize, TlsSize)]
 pub struct HpqMlsMessageIn {
@@ -137,6 +139,15 @@ pub struct HpqRatchetTreeIn {
 pub struct HpqKeyPackage {
     pub t_key_package: KeyPackage,
     pub pq_key_package: KeyPackage,
+}
+
+impl HpqKeyPackage {
+    pub fn mode(&self) -> PqtMode {
+        match self.pq_key_package.ciphersuite() {
+            Ciphersuite::MLS_256_MLKEM1024_AES256GCM_SHA512_MLDSA87 => PqtMode::ConfAndAuth,
+            _ => PqtMode::ConfOnly,
+        }
+    }
 }
 
 impl From<HpqKeyPackage> for HpqMlsMessageOut {
