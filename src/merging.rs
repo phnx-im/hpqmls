@@ -10,7 +10,7 @@ use openmls::{
 use crate::{HpqMlsGroup, processing::HpqStagedCommit};
 
 impl HpqMlsGroup {
-    /// Merges the pending [`StagedCommit`] of the traditional group, as well as
+    /// Merges the pending [`openmls::group::StagedCommit`] of the traditional group, as well as
     /// that of the PQ group if there is one.
     pub fn merge_pending_commit<Provider: OpenMlsProvider>(
         &mut self,
@@ -21,7 +21,7 @@ impl HpqMlsGroup {
         Ok(())
     }
 
-    /// Merge a [StagedCommit] into the group after inspection. As this advances
+    /// Merge a [`openmls::group::StagedCommit`] into the group after inspection. As this advances
     /// the epoch of the group, it also clears any pending commits.
     pub fn merge_staged_commit<Provider: OpenMlsProvider>(
         &mut self,

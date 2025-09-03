@@ -24,17 +24,17 @@ use crate::{
 
 pub mod authentication;
 pub mod commit_builder;
-pub mod export;
+mod export;
 pub mod extension;
 pub mod external_commit;
 pub mod group_builder;
 pub mod key_package;
-pub mod merging;
+mod merging;
 pub mod messages;
 pub mod processing;
 pub mod welcome;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Copy)]
 pub struct HpqCiphersuite {
     pub t_ciphersuite: Ciphersuite,
     pub pq_ciphersuite: Ciphersuite,
@@ -56,7 +56,7 @@ impl HpqCiphersuite {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TlsSize, TlsSerialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TlsSize, TlsSerialize)]
 pub struct HpqGroupId {
     pub t_group_id: GroupId,
     pub pq_group_id: GroupId,
@@ -81,7 +81,7 @@ impl HpqMlsGroup {
         GroupBuilder::new()
     }
 
-    pub fn commit_builder(&mut self) -> commit_builder::CommitBuilder {
+    pub fn commit_builder(&mut self) -> commit_builder::CommitBuilder<'_> {
         commit_builder::CommitBuilder::new(self)
     }
 
@@ -89,7 +89,7 @@ impl HpqMlsGroup {
     /// T group epoch of the HPQInfo extension.
     pub fn t_commit_builder<E>(
         &mut self,
-    ) -> Result<openmls::group::CommitBuilder<Initial>, CreateCommitError<E>> {
+    ) -> Result<openmls::group::CommitBuilder<'_, Initial>, CreateCommitError<E>> {
         let mut current_hpq_info = self
             .hpq_info()
             .ok_or_else(|| CreateCommitError::MissingHpqInfo)?;

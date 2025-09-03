@@ -14,7 +14,7 @@ use crate::{HpqCiphersuite, HpqMlsGroup};
 pub const HPQMLS_EXTENSION_ID: u16 = 0xFF01;
 pub const HPQMLS_EXTENSION_TYPE: ExtensionType = ExtensionType::Unknown(HPQMLS_EXTENSION_ID);
 
-#[derive(Default, Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, Copy, PartialEq)]
+#[derive(Default, Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PqtMode {
     #[default]
@@ -79,7 +79,7 @@ pub(super) fn ensure_extension_support(
         .ciphersuites()
         .iter()
         .map(|&cs| cs.try_into())
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<_, _>>()?;
     Capabilities::new(
         Some(capabilities.versions()),
         Some(&ciphersuites),

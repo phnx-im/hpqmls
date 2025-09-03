@@ -22,7 +22,7 @@ use crate::{
     messages::{HpqKeyPackage, HpqKeyPackageIn},
 };
 
-#[derive(Error, Debug, PartialEq, Clone)]
+#[derive(Error, Debug)]
 pub enum KeyPackageNewError {
     #[error(transparent)]
     OpenMls(#[from] OpenMlsKeyPackageNewError),
@@ -80,7 +80,8 @@ impl HpqKeyPackageBuilder {
         self
     }
 
-    /// Mark the key package as a last-resort key package via a [`LastResortExtension`].
+    /// Mark the key package as a last-resort key package via a
+    /// [`openmls::extensions::LastResortExtension`].
     pub fn mark_as_last_resort(mut self) -> Self {
         self.t_kp_builder = self.t_kp_builder.mark_as_last_resort();
         self.pq_kp_builder = self.pq_kp_builder.mark_as_last_resort();
@@ -102,7 +103,6 @@ impl HpqKeyPackageBuilder {
     }
 
     /// Finalize and build the key package.
-    #[allow(clippy::too_many_arguments)]
     pub fn build(
         mut self,
         provider: &impl OpenMlsProvider,
