@@ -38,7 +38,7 @@ impl<StorageError> From<InvalidExtensionError> for NewGroupError<StorageError> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct GroupBuilder {
     t_group_builder: MlsGroupBuilder,
     pq_group_builder: MlsGroupBuilder,
@@ -49,20 +49,6 @@ pub struct GroupBuilder {
     capabilities: Capabilities,
     t_extensions: Extensions,
     pq_extensions: Extensions,
-}
-
-impl Default for GroupBuilder {
-    fn default() -> Self {
-        Self {
-            t_group_builder: Default::default(),
-            pq_group_builder: Default::default(),
-            group_ids: Default::default(),
-            mode: Default::default(),
-            capabilities: Default::default(),
-            t_extensions: Default::default(),
-            pq_extensions: Default::default(),
-        }
-    }
 }
 
 impl GroupBuilder {

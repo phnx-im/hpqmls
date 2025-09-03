@@ -81,7 +81,7 @@ impl HpqMlsGroup {
         GroupBuilder::new()
     }
 
-    pub fn commit_builder(&mut self) -> commit_builder::CommitBuilder {
+    pub fn commit_builder(&mut self) -> commit_builder::CommitBuilder<'_> {
         commit_builder::CommitBuilder::new(self)
     }
 
@@ -89,7 +89,7 @@ impl HpqMlsGroup {
     /// T group epoch of the HPQInfo extension.
     pub fn t_commit_builder<E>(
         &mut self,
-    ) -> Result<openmls::group::CommitBuilder<Initial>, CreateCommitError<E>> {
+    ) -> Result<openmls::group::CommitBuilder<'_, Initial>, CreateCommitError<E>> {
         let mut current_hpq_info = self
             .hpq_info()
             .ok_or_else(|| CreateCommitError::MissingHpqInfo)?;
