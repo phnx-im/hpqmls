@@ -34,7 +34,7 @@ fn join_group_helper(mode: PqtMode) -> JoinedGroup {
         .unwrap();
 
     // Generate KeyPackages for Bob
-    let key_package = bob.generate_key_package(ciphersuite.into());
+    let key_package = bob.generate_key_package(ciphersuite);
 
     // Alice proposes to add Bob's KeyPackages
     let commit_bundle = alice_group
