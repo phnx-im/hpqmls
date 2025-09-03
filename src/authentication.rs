@@ -13,7 +13,7 @@ use tls_codec::{Serialize as _, TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::HpqCiphersuite;
 
-#[derive(Debug, Clone, PartialEq, TlsSize, TlsSerialize, TlsDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, TlsSize, TlsSerialize, TlsDeserialize)]
 pub struct HpqVerifyingKey {
     pub t_verifying_key: SignaturePublicKey,
     pub pq_verifying_key: SignaturePublicKey,
@@ -122,7 +122,7 @@ impl HpqSigner for HpqSignatureKeyPair {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HpqStorageId {
     pub t_signature_scheme: SignatureScheme,
     pub t_verifying_key: Vec<u8>,

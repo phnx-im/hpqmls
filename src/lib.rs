@@ -24,17 +24,17 @@ use crate::{
 
 pub mod authentication;
 pub mod commit_builder;
-pub mod export;
+mod export;
 pub mod extension;
 pub mod external_commit;
 pub mod group_builder;
 pub mod key_package;
-pub mod merging;
+mod merging;
 pub mod messages;
 pub mod processing;
 pub mod welcome;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Copy)]
 pub struct HpqCiphersuite {
     pub t_ciphersuite: Ciphersuite,
     pub pq_ciphersuite: Ciphersuite,
@@ -56,7 +56,7 @@ impl HpqCiphersuite {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TlsSize, TlsSerialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TlsSize, TlsSerialize)]
 pub struct HpqGroupId {
     pub t_group_id: GroupId,
     pub pq_group_id: GroupId,

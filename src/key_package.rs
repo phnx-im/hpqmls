@@ -22,7 +22,7 @@ use crate::{
     messages::{HpqKeyPackage, HpqKeyPackageIn},
 };
 
-#[derive(Error, Debug, PartialEq, Clone)]
+#[derive(Error, Debug)]
 pub enum KeyPackageNewError {
     #[error(transparent)]
     OpenMls(#[from] OpenMlsKeyPackageNewError),
@@ -103,7 +103,6 @@ impl HpqKeyPackageBuilder {
     }
 
     /// Finalize and build the key package.
-    #[allow(clippy::too_many_arguments)]
     pub fn build(
         mut self,
         provider: &impl OpenMlsProvider,

@@ -24,7 +24,7 @@ use crate::{
     key_package::ensure_ciphersuite_support,
 };
 
-#[derive(Error, Debug, PartialEq, Clone)]
+#[derive(Error, Debug)]
 pub enum NewGroupError<StorageError> {
     #[error(transparent)]
     NewGroup(#[from] OpenMlsNewGroupError<StorageError>),
