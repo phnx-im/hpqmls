@@ -80,7 +80,8 @@ impl HpqKeyPackageBuilder {
         self
     }
 
-    /// Mark the key package as a last-resort key package via a [`LastResortExtension`].
+    /// Mark the key package as a last-resort key package via a
+    /// [`openmls::extensions::LastResortExtension`].
     pub fn mark_as_last_resort(mut self) -> Self {
         self.t_kp_builder = self.t_kp_builder.mark_as_last_resort();
         self.pq_kp_builder = self.pq_kp_builder.mark_as_last_resort();

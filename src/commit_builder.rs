@@ -143,7 +143,7 @@ pub struct CommitBuilder<'a> {
 }
 
 impl<'a> CommitBuilder<'a> {
-    /// returns a new [`CommitBuilder`] for the given [`MlsGroup`].
+    /// returns a new [`CommitBuilder`] for the given [`openmls::group::MlsGroup`].
     pub fn new(group: &'a mut HpqMlsGroup) -> Self {
         Self {
             group,
@@ -158,8 +158,9 @@ impl<'a> CommitBuilder<'a> {
         self
     }
 
-    /// Sets whether or not a [`GroupInfo`] should be created when the commit is staged. Defaults to
-    /// the value of the [`MlsGroup`]s [`MlsGroupJoinConfig`].
+    /// Sets whether or not a [`openmls::messages::group_info::GroupInfo`] should be created when
+    /// the commit is staged. Defaults to the value of the [`openmls::group::MlsGroup`]s
+    /// [`openmls::group::MlsGroupJoinConfig`].
     pub fn create_group_info(mut self, create_group_info: bool) -> Self {
         self.values.create_group_info = Some(create_group_info);
         self
@@ -210,14 +211,10 @@ impl<'a> CommitBuilder<'a> {
         self
     }
 
-    /// Adds an Add proposal for each of the provided [`KeyPackage`] tuples to
-    /// the list of proposals to be committed. The first KeyPackage in each
-    /// tuple must be the traditional one and the second the post-quantum one.
+    /// Adds an Add proposal for each of the provided [`openmls::key_packages::KeyPackage`] tuples
+    /// to the list of proposals to be committed. The first KeyPackage in each tuple must be the
+    /// traditional one and the second the post-quantum one.
     pub fn propose_adds(mut self, key_packages: impl IntoIterator<Item = HpqKeyPackage>) -> Self {
-        //let (t_key_packages, pq_key_packages): (Vec<_>, Vec<_>) = key_packages
-        //    .into_iter()
-        //    .map(|kp| (kp.t_key_package, kp.pq_key_package))
-        //    .unzip();
         self.values.proposed_adds.extend(key_packages);
         self
     }
