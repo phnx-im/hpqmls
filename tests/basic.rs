@@ -162,8 +162,8 @@ fn t_only_update() {
 
         // Update HPQMLS Info extension with new epoch via GCE proposal
         let alice_commit_bundle = alice_group
-            .t_commit_builder::<()>()
-            .unwrap()
+            .t_group
+            .commit_builder()
             .force_self_update(true)
             .load_psks(alice.provider.storage())
             .unwrap()

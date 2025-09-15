@@ -24,6 +24,7 @@ use crate::{
     key_package::ensure_ciphersuite_support,
 };
 
+/// Errors that can occur when creating a new [`HpqMlsGroup`].
 #[derive(Error, Debug)]
 pub enum NewGroupError<StorageError> {
     #[error(transparent)]
@@ -38,6 +39,7 @@ impl<StorageError> From<InvalidExtensionError> for NewGroupError<StorageError> {
     }
 }
 
+/// A builder for creating a new [`HpqMlsGroup`].
 #[derive(Debug, Default)]
 pub struct GroupBuilder {
     t_group_builder: MlsGroupBuilder,
@@ -56,6 +58,7 @@ impl GroupBuilder {
         Self::default()
     }
 
+    /// Sets the [`PqtMode`] mode of the [`HpqMlsGroup`].
     pub fn set_mode(mut self, mode: PqtMode) -> Self {
         self.mode = mode;
         self

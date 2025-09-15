@@ -13,18 +13,24 @@ use thiserror::Error;
 use tls_codec::Serialize;
 
 use crate::{
-    HpqMlsGroup, HpqPskError, HpqPskId, extension::HPQMLS_EXTENSION_ID, messages::HpqMlsMessageIn,
-    store_psk,
+    HpqMlsGroup,
+    extension::HPQMLS_EXTENSION_ID,
+    messages::HpqMlsMessageIn,
+    psk::{HpqPskError, HpqPskId, store_psk},
 };
 
+/// A bundle consisting of the processed messages of both the traditional and
+/// the PQ group.
 pub struct HpqProcessedMessage {
-    pub t_message: ProcessedMessage,
-    pub pq_message: Option<ProcessedMessage>,
+    t_message: ProcessedMessage,
+    pq_message: ProcessedMessage,
 }
 
+/// A bundle consisting of the staged commits of both the traditional and the
+/// PQ group.
 pub struct HpqStagedCommit {
     pub t_staged_commit: StagedCommit,
-    pub pq_staged_commit: Option<StagedCommit>,
+    pub pq_staged_commit: StagedCommit,
 }
 
 impl HpqProcessedMessage {
@@ -33,13 +39,9 @@ impl HpqProcessedMessage {
             ProcessedMessageContent::StagedCommitMessage(staged_commit) => *staged_commit,
             _ => return None,
         };
-        let pq_staged_commit = if let Some(pq_message) = self.pq_message {
-            match pq_message.into_content() {
-                ProcessedMessageContent::StagedCommitMessage(staged_commit) => Some(*staged_commit),
-                _ => return None,
-            }
-        } else {
-            None
+        let pq_staged_commit = match self.pq_message.into_content() {
+            ProcessedMessageContent::StagedCommitMessage(staged_commit) => *staged_commit,
+            _ => return None,
         };
         Some(HpqStagedCommit {
             t_staged_commit,
@@ -58,6 +60,7 @@ fn into_protocol_message(
     }
 }
 
+/// Errors that can occur when processing a message with an [`HpqMlsGroup`].
 #[derive(Debug, Error)]
 pub enum HpqProcessMessageError<StorageError> {
     #[error("Failed to process message: {0}")]
@@ -82,32 +85,26 @@ impl HpqMlsGroup {
         message: HpqMlsMessageIn,
     ) -> Result<HpqProcessedMessage, HpqProcessMessageError<Provider::StorageError>> {
         // We only export a PSK if we process a PQ message
-        let pq_message = match message.pq_message {
-            None => None,
-            Some(pq_message) => {
-                let pq_protocol_message = into_protocol_message(pq_message.extract())?;
-                let mut pq_processed_message = self
-                    .pq_group
-                    .process_message(provider, pq_protocol_message)?;
-                let psk_value = pq_processed_message
-                    .safe_export_secret(provider.crypto(), HPQMLS_EXTENSION_ID)
-                    .map_err(HpqPskError::ExportFromProcessed)?;
+        let pq_protocol_message = into_protocol_message(message.pq_message.extract())?;
+        let mut pq_message = self
+            .pq_group
+            .process_message(provider, pq_protocol_message)?;
+        let psk_value = pq_message
+            .safe_export_secret(provider.crypto(), HPQMLS_EXTENSION_ID)
+            .map_err(HpqPskError::ExportFromProcessed)?;
 
-                let next_epoch = self.pq_group.epoch().as_u64() + 1;
-                HpqPskId {
-                    group_id: self.pq_group.group_id().clone(),
-                    epoch: next_epoch,
-                }
-                .tls_serialize_detached()
-                .map_err(HpqPskError::SerializingPskId)?
-                .pipe(ExternalPsk::new)
-                .pipe(Psk::External)
-                .pipe(|psk| PreSharedKeyId::new(self.t_group.ciphersuite(), provider.rand(), psk))
-                .map_err(HpqPskError::DerivingPskId)?
-                .pipe(|id| store_psk(provider, id, &psk_value))?;
-                Some(pq_processed_message)
-            }
-        };
+        let next_epoch = self.pq_group.epoch().as_u64() + 1;
+        HpqPskId {
+            group_id: self.pq_group.group_id().clone(),
+            epoch: next_epoch,
+        }
+        .tls_serialize_detached()
+        .map_err(HpqPskError::SerializingPskId)?
+        .pipe(ExternalPsk::new)
+        .pipe(Psk::External)
+        .pipe(|psk| PreSharedKeyId::new(self.t_group.ciphersuite(), provider.rand(), psk))
+        .map_err(HpqPskError::DerivingPskId)?
+        .pipe(|id| store_psk(provider, id, &psk_value))?;
 
         let t_protocol_message = into_protocol_message(message.t_message.extract())?;
         let t_message = self.t_group.process_message(provider, t_protocol_message)?;

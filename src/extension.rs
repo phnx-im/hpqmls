@@ -14,6 +14,8 @@ use crate::{HpqCiphersuite, HpqMlsGroup};
 pub const HPQMLS_EXTENSION_ID: u16 = 0xFF01;
 pub const HPQMLS_EXTENSION_TYPE: ExtensionType = ExtensionType::Unknown(HPQMLS_EXTENSION_ID);
 
+/// The mode of an [`HpqMlsGroup`], which determines whether only confidentiality or both
+/// confidentiality and authentication is PQ secure.
 #[derive(Default, Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PqtMode {
@@ -32,6 +34,7 @@ impl From<PqtMode> for bool {
 }
 
 impl PqtMode {
+    /// Returns the default ciphersuite for the given mode.
     pub fn default_ciphersuite(&self) -> HpqCiphersuite {
         match self {
             PqtMode::ConfOnly => HpqCiphersuite::default_pq_conf(),
@@ -40,6 +43,8 @@ impl PqtMode {
     }
 }
 
+/// The HPQMLS extension, which is used to store HPQMLS-specific information
+/// in the extensions of an `[MlsGroup]`.
 #[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize)]
 pub struct HpqMlsInfo {
     pub t_session_group_id: GroupId,
@@ -91,6 +96,7 @@ pub(super) fn ensure_extension_support(
 }
 
 impl HpqMlsGroup {
+    /// Get the HPQMLS extension from the group, if it exists.
     pub fn hpq_info(&self) -> Option<HpqMlsInfo> {
         self.t_group
             .extensions()

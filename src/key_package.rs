@@ -12,6 +12,7 @@ use openmls::{
     },
     storage::OpenMlsProvider,
 };
+use serde::{Deserialize, Serialize};
 use tap::Pipe as _;
 use thiserror::Error;
 
@@ -22,6 +23,7 @@ use crate::{
     messages::{HpqKeyPackage, HpqKeyPackageIn},
 };
 
+/// Errors that can occur when creating a new [`HpqKeyPackage`].
 #[derive(Error, Debug)]
 pub enum KeyPackageNewError {
     #[error(transparent)]
@@ -30,12 +32,16 @@ pub enum KeyPackageNewError {
     UnsupportedCiphersuite(#[from] tls_codec::Error),
 }
 
+/// A builder for creating a new [`HpqKeyPackage`].
 pub struct HpqKeyPackageBuilder {
     capabilities: Capabilities,
     t_kp_builder: KeyPackageBuilder,
     pq_kp_builder: KeyPackageBuilder,
 }
 
+/// A bundle consisting of an [`HpqKeyPackage`] and its corresponding
+/// private keys.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HpqKeyPackageBundle {
     t_kp_bundle: KeyPackageBundle,
     pq_kp_bundle: KeyPackageBundle,

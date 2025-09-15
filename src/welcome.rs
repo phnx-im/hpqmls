@@ -9,10 +9,13 @@ use openmls::{
 use thiserror::Error;
 
 use crate::{
-    HpqMlsGroup, HpqPskError, derive_and_store_psk,
+    HpqMlsGroup,
     messages::{HpqRatchetTreeIn, HpqWelcome},
+    psk::{HpqPskError, derive_and_store_psk},
 };
 
+/// Errors that can occur when creating a new [`HpqMlsGroup`] from a welcome
+/// message.
 #[derive(Debug, Error)]
 pub enum WelcomeError<StorageError> {
     #[error("Failed to process welcome message: {0}")]
@@ -21,12 +24,14 @@ pub enum WelcomeError<StorageError> {
     Psk(#[from] HpqPskError<StorageError>),
 }
 
+/// A staged HPQ welcome.
 pub struct StagedHpqWelcome {
-    pub t_staged_welcome: StagedWelcome,
-    pub pq_staged_welcome: StagedWelcome,
+    t_staged_welcome: StagedWelcome,
+    pq_staged_welcome: StagedWelcome,
 }
 
 impl HpqMlsGroup {
+    /// Creates a new [`HpqMlsGroup`] from a welcome message.
     // TODO: Split into sans-io friendly parts.
     pub fn new_from_welcome<Provider: OpenMlsProvider>(
         provider: &Provider,
@@ -63,6 +68,7 @@ impl HpqMlsGroup {
 }
 
 impl StagedHpqWelcome {
+    /// Creates a new [`StagedHpqWelcome`] from a welcome message.
     pub fn new_from_welcome<Provider: OpenMlsProvider>(
         provider: &Provider,
         mls_group_config: &MlsGroupJoinConfig,
@@ -92,6 +98,7 @@ impl StagedHpqWelcome {
         })
     }
 
+    /// Consumes the staged welcome and creates a new [`HpqMlsGroup`].
     pub fn into_group<Provider: OpenMlsProvider>(
         self,
         provider: &Provider,
