@@ -64,10 +64,12 @@ impl HpqCommitMessageBundle {
             }
         };
 
-        let group_info = t_group_info.zip(pq_group_info).map(|(t, pq)| HpqGroupInfo {
-            t_group_info: t.into(),
-            pq_group_info: pq.into(),
-        });
+        let group_info = t_group_info
+            .zip(pq_group_info)
+            .map(|(t_group_info, pq_group_info)| HpqGroupInfo {
+                t_group_info,
+                pq_group_info,
+            });
 
         Self {
             commit,
@@ -273,6 +275,7 @@ impl<'a> CommitBuilder<'a> {
             self.group.t_group.ciphersuite(),
         )?
         .pipe(PreSharedKeyProposal::new)
+        .pipe(Box::new)
         .pipe(Proposal::PreSharedKey);
 
         let t_result = self
