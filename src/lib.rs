@@ -114,6 +114,13 @@ impl HpqMlsGroup {
         }
     }
 
+    pub fn ciphersuite(&self) -> HpqCiphersuite {
+        HpqCiphersuite {
+            t_ciphersuite: self.t_group.ciphersuite(),
+            pq_ciphersuite: self.pq_group.ciphersuite(),
+        }
+    }
+
     /// Returns the `[HpqVerifyingKey]` of the member at the given index.
     pub fn verifying_key_at(&self, index: LeafNodeIndex) -> Option<HpqVerifyingKey> {
         let t_member = self.t_group.member_at(index)?;

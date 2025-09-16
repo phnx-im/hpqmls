@@ -5,7 +5,7 @@
 use hpqmls::{HpqMlsGroup, authentication::HpqSigner as _, extension::PqtMode};
 use openmls::{
     group::{GroupId, MlsGroupJoinConfig},
-    prelude::{LeafNodeIndex, MlsMessageIn, OpenMlsProvider, ProcessedMessageContent},
+    prelude::{Credential, LeafNodeIndex, MlsMessageIn, OpenMlsProvider, ProcessedMessageContent},
 };
 use openmls_rust_crypto::OpenMlsRustCrypto;
 use tls_codec::{Deserialize as _, Serialize};
@@ -13,6 +13,10 @@ use tls_codec::{Deserialize as _, Serialize};
 use crate::utils::{assert_groups_eq, client::Client};
 
 mod utils;
+
+fn compare_credentials(cred1: &Credential, cred2: &Credential) -> bool {
+    cred1 == cred2
+}
 
 fn join_group_helper(mode: PqtMode) -> JoinedGroup {
     let ciphersuite = mode.default_ciphersuite();
@@ -88,6 +92,7 @@ fn update_group_helper(group: JoinedGroup) -> JoinedGroup {
         .process_message(
             &bob.provider,
             alice_commit_bundle.commit.try_into().unwrap(),
+            compare_credentials,
         )
         .unwrap();
     bob_group
@@ -159,8 +164,6 @@ fn t_only_update() {
         } = join_group_helper(ciphersuite);
 
         // Alice does a T-only update
-
-        // Update HPQMLS Info extension with new epoch via GCE proposal
         let alice_commit_bundle = alice_group
             .t_group
             .commit_builder()
