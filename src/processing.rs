@@ -359,7 +359,8 @@ impl HpqMlsGroup {
                 && t_extension.t_epoch == t_staged_commit.group_context().epoch();
 
             // New epochs must be one higher than the current ones
-            let epochs_match = pq_extension.pq_epoch.as_u64() == self.pq_group.epoch().as_u64() + 1
+            let epochs_are_incremented = pq_extension.pq_epoch.as_u64()
+                == self.pq_group.epoch().as_u64() + 1
                 && t_extension.t_epoch.as_u64() == self.t_group.epoch().as_u64() + 1;
 
             // Group IDs must be in line with the groups
@@ -376,6 +377,7 @@ impl HpqMlsGroup {
 
             if !extensions_match
                 || !epochs_match
+                || !epochs_are_incremented
                 || !group_ids_match
                 || !ciphersuites_match
                 || !ciphersuite_matches_mode
