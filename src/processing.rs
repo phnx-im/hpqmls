@@ -113,7 +113,7 @@ impl<F: Fn(&Credential, &Credential) -> bool> MessageType<F> {
             ProcessedMessageContent::ApplicationMessage(_) => None,
             ProcessedMessageContent::ProposalMessage(queued_proposal) => {
                 let proposal = queued_proposal.proposal();
-                let proposal_type = proposal.proposal_type().clone();
+                let proposal_type = proposal.proposal_type();
                 let (credential, leaf_index) = match proposal {
                     Proposal::Add(add_proposal) => (
                         Some(add_proposal.key_package().leaf_node().credential().clone()),
@@ -134,7 +134,7 @@ impl<F: Fn(&Credential, &Credential) -> bool> MessageType<F> {
             }
             ProcessedMessageContent::ExternalJoinProposalMessage(queued_proposal) => {
                 let proposal = queued_proposal.proposal();
-                let proposal_type = proposal.proposal_type().clone();
+                let proposal_type = proposal.proposal_type();
                 let credential = if let Proposal::Add(add_proposal) = proposal {
                     Some(add_proposal.key_package().leaf_node().credential().clone())
                 } else {
@@ -343,11 +343,11 @@ impl HpqMlsGroup {
                 t_message.content()
         {
             let pq_extension =
-                HpqMlsInfo::from_extensions(&pq_staged_commit.group_context().extensions())
+                HpqMlsInfo::from_extensions(pq_staged_commit.group_context().extensions())
                     .map_err(|_| HpqProcessMessageError::MissingHpqMlsInfo)?
                     .ok_or(HpqProcessMessageError::MissingHpqMlsInfo)?;
             let t_extension =
-                HpqMlsInfo::from_extensions(&t_staged_commit.group_context().extensions())
+                HpqMlsInfo::from_extensions(t_staged_commit.group_context().extensions())
                     .map_err(|_| HpqProcessMessageError::MissingHpqMlsInfo)?
                     .ok_or(HpqProcessMessageError::MissingHpqMlsInfo)?;
 
