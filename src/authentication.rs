@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+//! This module defines types and traits for handling authentication in HPQMLS.
+
 use openmls::prelude::{
     BasicCredential, CredentialWithKey, CryptoError, SignaturePublicKey, SignatureScheme,
 };
@@ -13,6 +15,7 @@ use tls_codec::{Serialize as _, TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::HpqCiphersuite;
 
+/// The combined verifying key of a `[HpqSigner]`.
 #[derive(Debug, Clone, PartialEq, Eq, TlsSize, TlsSerialize, TlsDeserialize)]
 pub struct HpqVerifyingKey {
     pub t_verifying_key: SignaturePublicKey,
@@ -27,6 +30,7 @@ impl HpqVerifyingKey {
     }
 }
 
+/// A combined credential with key for use in HPQMLS.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HpqCredentialWithKey {
     pub t_credential: CredentialWithKey,
@@ -51,6 +55,7 @@ impl HpqCredentialWithKey {
     }
 }
 
+/// A trait for types that can sign messages in HPQMLS.
 pub trait HpqSigner {
     fn t_signer(&self) -> &SignatureKeyPair;
     fn pq_signer(&self) -> &SignatureKeyPair;
@@ -70,6 +75,7 @@ pub trait HpqSigner {
     }
 }
 
+/// The signature scheme of a `[HpqSigner]`.
 #[derive(Debug, Clone, Copy)]
 pub struct HpqSignatureScheme {
     pub t_signature_scheme: SignatureScheme,
@@ -85,10 +91,11 @@ impl From<HpqCiphersuite> for HpqSignatureScheme {
     }
 }
 
+/// A combined signature key pair for use in HPQMLS.
 #[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, Serialize, Deserialize)]
 pub struct HpqSignatureKeyPair {
-    pub t_signer: SignatureKeyPair,
-    pub pq_signer: SignatureKeyPair,
+    t_signer: SignatureKeyPair,
+    pq_signer: SignatureKeyPair,
 }
 
 impl HpqSignatureKeyPair {
@@ -122,12 +129,13 @@ impl HpqSigner for HpqSignatureKeyPair {
     }
 }
 
+/// The storage ID for a `[HpqSignatureKeyPair]`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HpqStorageId {
-    pub t_signature_scheme: SignatureScheme,
-    pub t_verifying_key: Vec<u8>,
-    pub pq_signature_scheme: SignatureScheme,
-    pub pq_verifying_key: Vec<u8>,
+    t_signature_scheme: SignatureScheme,
+    t_verifying_key: Vec<u8>,
+    pq_signature_scheme: SignatureScheme,
+    pq_verifying_key: Vec<u8>,
 }
 
 // Implement key traits for the storage id

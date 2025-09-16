@@ -14,8 +14,8 @@ pub fn assert_groups_eq(group1: &mut HpqMlsGroup, group2: &mut HpqMlsGroup) {
         t_group_2_authenticator.as_slice(),
         "t_group secrets do not match"
     );
-    let pq_group_1_authenticator = group1.pq_group.epoch_authenticator();
-    let pq_group_2_authenticator = group2.pq_group.epoch_authenticator();
+    let pq_group_1_authenticator = group1.pq_group().epoch_authenticator();
+    let pq_group_2_authenticator = group2.pq_group().epoch_authenticator();
     assert_eq!(
         pq_group_1_authenticator.as_slice(),
         pq_group_2_authenticator.as_slice(),

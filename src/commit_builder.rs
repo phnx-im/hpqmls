@@ -14,13 +14,13 @@ use tap::Pipe as _;
 use thiserror::Error;
 
 use crate::{
-    HpqMlsGroup, HpqPskError,
+    HpqMlsGroup,
     authentication::HpqSigner,
-    derive_and_store_psk,
-    external_commit::HpqGroupInfo,
-    messages::{HpqKeyPackage, HpqMlsMessageOut, HpqWelcome},
+    messages::{HpqGroupInfo, HpqKeyPackage, HpqMlsMessageOut, HpqWelcome},
+    psk::{HpqPskError, derive_and_store_psk},
 };
 
+/// Error while creating a commit in HPQMLS.
 #[derive(Debug, Error)]
 pub enum CreateCommitError<StorageError> {
     #[error("Failed to build commit: {0}")]
@@ -35,6 +35,7 @@ pub enum CreateCommitError<StorageError> {
     Psk(#[from] HpqPskError<StorageError>),
 }
 
+/// A message bundle resulting from a commit operation in HPQMLS.
 pub struct HpqCommitMessageBundle {
     pub commit: HpqMlsMessageOut,
     pub welcome: Option<HpqWelcome>,
@@ -42,13 +43,9 @@ pub struct HpqCommitMessageBundle {
 }
 
 impl HpqCommitMessageBundle {
-    fn from_bundles(t_bundle: CommitMessageBundle, pq_bundle: Option<CommitMessageBundle>) -> Self {
+    fn from_bundles(t_bundle: CommitMessageBundle, pq_bundle: CommitMessageBundle) -> Self {
         let (t_commit, t_welcome, t_group_info) = t_bundle.into_contents();
-        let (pq_commit, pq_welcome, pq_group_info) =
-            pq_bundle.map_or((None, None, None), |bundle| {
-                let (commit, welcome, group_info) = bundle.into_contents();
-                (Some(commit), welcome, group_info)
-            });
+        let (pq_commit, pq_welcome, pq_group_info) = pq_bundle.into_contents();
 
         let commit = HpqMlsMessageOut {
             t_message: t_commit,
@@ -67,10 +64,12 @@ impl HpqCommitMessageBundle {
             }
         };
 
-        let group_info = t_group_info.map(|t| HpqGroupInfo {
-            t_group_info: t.into(),
-            pq_group_info: pq_group_info.map(|pq| pq.into()),
-        });
+        let group_info = t_group_info
+            .zip(pq_group_info)
+            .map(|(t_group_info, pq_group_info)| HpqGroupInfo {
+                t_group_info,
+                pq_group_info,
+            });
 
         Self {
             commit,
@@ -79,12 +78,19 @@ impl HpqCommitMessageBundle {
         }
     }
 
+    /// Consumes the bundle and returns the commit message.
     pub fn into_message_out(self) -> HpqMlsMessageOut {
         self.commit
     }
 
+    /// Consumes the bundle and returns the welcome message, if any.
     pub fn into_welcome(self) -> Option<HpqWelcome> {
         self.welcome
+    }
+
+    /// Consumes the bundle and returns the group info, if any.
+    pub fn into_group_info(self) -> Option<HpqGroupInfo> {
+        self.group_info
     }
 }
 
@@ -137,6 +143,8 @@ impl ConfigValues {
     }
 }
 
+/// A builder for creating commits in an HPQMLS group. This builder can be used
+/// to affect membership changes and issue full updates.
 pub struct CommitBuilder<'a> {
     group: &'a mut HpqMlsGroup,
     values: ConfigValues,
@@ -267,6 +275,7 @@ impl<'a> CommitBuilder<'a> {
             self.group.t_group.ciphersuite(),
         )?
         .pipe(PreSharedKeyProposal::new)
+        .pipe(Box::new)
         .pipe(Proposal::PreSharedKey);
 
         let t_result = self
@@ -279,9 +288,6 @@ impl<'a> CommitBuilder<'a> {
             .load_psks(provider.storage())?
             .build(provider.rand(), provider.crypto(), signer.t_signer(), t_f)?
             .stage_commit(provider)?;
-        Ok(HpqCommitMessageBundle::from_bundles(
-            t_result,
-            Some(pq_result),
-        ))
+        Ok(HpqCommitMessageBundle::from_bundles(t_result, pq_result))
     }
 }

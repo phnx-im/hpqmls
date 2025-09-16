@@ -2,17 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use openmls::{
-    group::{ExportGroupInfoError, ExportSecretError, SafeExportSecretError},
-    prelude::OpenMlsCrypto,
-    storage::StorageProvider,
-};
+use openmls::{group::ExportGroupInfoError, prelude::OpenMlsCrypto};
 
 use crate::{
-    HpqMlsGroup, authentication::HpqSigner, external_commit::HpqGroupInfo, messages::HpqRatchetTree,
+    HpqMlsGroup,
+    authentication::HpqSigner,
+    messages::{HpqMlsMessageOut, HpqRatchetTree},
 };
 
 impl HpqMlsGroup {
+    /// Export the ratchet tree of the group.
     pub fn export_ratchet_tree(&self) -> HpqRatchetTree {
         let t_ratchet_tree = self.t_group.export_ratchet_tree();
         let pq_ratchet_tree = self.pq_group.export_ratchet_tree();
@@ -22,43 +21,23 @@ impl HpqMlsGroup {
         }
     }
 
+    /// Export the group info of the group.
     pub fn export_group_info(
         &self,
         crypto: &impl OpenMlsCrypto,
         signer: &impl HpqSigner,
         with_ratchet_tree: bool,
-    ) -> Result<HpqGroupInfo, ExportGroupInfoError> {
+    ) -> Result<HpqMlsMessageOut, ExportGroupInfoError> {
         let t_group_info =
             self.t_group
                 .export_group_info(crypto, signer.t_signer(), with_ratchet_tree)?;
         let pq_group_info =
             self.pq_group
                 .export_group_info(crypto, signer.pq_signer(), with_ratchet_tree)?;
-        let group_info = HpqGroupInfo {
-            t_group_info,
-            pq_group_info: Some(pq_group_info),
+        let group_info = HpqMlsMessageOut {
+            t_message: t_group_info,
+            pq_message: pq_group_info,
         };
         Ok(group_info)
-    }
-
-    pub fn export_secret<CryptoProvider: OpenMlsCrypto>(
-        &self,
-        crypto: &CryptoProvider,
-        label: &str,
-        context: &[u8],
-        key_length: usize,
-    ) -> Result<Vec<u8>, ExportSecretError> {
-        self.t_group
-            .export_secret(crypto, label, context, key_length)
-    }
-
-    pub fn safe_export_secret<Crypto: OpenMlsCrypto, Storage: StorageProvider>(
-        &mut self,
-        crypto: &Crypto,
-        storage: &Storage,
-        component_id: u16,
-    ) -> Result<Vec<u8>, SafeExportSecretError<Storage::Error>> {
-        self.t_group
-            .safe_export_secret(crypto, storage, component_id)
     }
 }

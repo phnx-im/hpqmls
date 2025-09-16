@@ -34,10 +34,8 @@ impl HpqMlsGroup {
         } = staged_commit;
         self.t_group
             .merge_staged_commit(provider, t_staged_commit)?;
-        if let Some(pq_staged_commit) = pq_staged_commit {
-            self.pq_group
-                .merge_staged_commit(provider, pq_staged_commit)?;
-        }
+        self.pq_group
+            .merge_staged_commit(provider, pq_staged_commit)?;
         Ok(())
     }
 
