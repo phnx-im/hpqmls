@@ -353,22 +353,10 @@ impl HpqMlsGroup {
 
             // Extension contents must match
             let extensions_match = pq_extension == t_extension;
-            println!("Extensions match: {extensions_match}");
 
             // Epochs must be in line with the groups
             let epochs_match = pq_extension.pq_epoch == pq_staged_commit.group_context().epoch()
                 && t_extension.t_epoch == t_staged_commit.group_context().epoch();
-            println!("Epochs match: {epochs_match}");
-            println!(
-                "Epochs before commit - PQ: {}, T: {}",
-                self.pq_group.epoch().as_u64(),
-                self.t_group.epoch().as_u64()
-            );
-            println!(
-                "PQ epoch: {}, T epoch: {}",
-                pq_extension.pq_epoch.as_u64(),
-                t_extension.t_epoch.as_u64()
-            );
 
             // New epochs must be one higher than the current ones
             let epochs_match = pq_extension.pq_epoch.as_u64() == self.pq_group.epoch().as_u64() + 1
@@ -377,17 +365,14 @@ impl HpqMlsGroup {
             // Group IDs must be in line with the groups
             let group_ids_match = pq_extension.pq_session_group_id == *self.pq_group.group_id()
                 && t_extension.t_session_group_id == *self.t_group.group_id();
-            println!("Group IDs match: {group_ids_match}");
 
             // Ciphersuites must be in line with the groups
             let ciphersuites_match = pq_extension.pq_cipher_suite == self.pq_group.ciphersuite()
                 && t_extension.t_cipher_suite == self.t_group.ciphersuite();
-            println!("Ciphersuites match: {ciphersuites_match}");
 
             // Mode is correctly set
             let ciphersuite_matches_mode =
                 self.ciphersuite() == pq_extension.mode.default_ciphersuite();
-            println!("Ciphersuite matches mode: {ciphersuite_matches_mode}");
 
             if !extensions_match
                 || !epochs_match

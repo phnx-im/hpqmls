@@ -65,23 +65,8 @@ impl HpqMlsInfo {
     }
 
     pub(super) fn set_epoch(&mut self, t_epoch: GroupEpoch, pq_epoch: GroupEpoch) {
-        println!(
-            "Setting epochs to: t_epoch = {}, pq_epoch = {}",
-            t_epoch.as_u64(),
-            pq_epoch.as_u64()
-        );
-        println!(
-            "Current epochs: t_epoch = {}, pq_epoch = {}",
-            self.t_epoch.as_u64(),
-            self.pq_epoch.as_u64()
-        );
         self.t_epoch = t_epoch;
         self.pq_epoch = pq_epoch;
-        println!(
-            "New epochs: t_epoch = {}, pq_epoch = {}",
-            self.t_epoch.as_u64(),
-            self.pq_epoch.as_u64()
-        );
     }
 
     pub(super) fn from_extensions(
