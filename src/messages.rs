@@ -72,6 +72,14 @@ impl HpqProtocolMessage {
             pq_group_id: self.pq_protocol_message.group_id().clone(),
         }
     }
+
+    pub fn t_epoch(&self) -> GroupEpoch {
+        self.t_protocol_message.epoch()
+    }
+
+    pub fn pq_epoch(&self) -> GroupEpoch {
+        self.pq_protocol_message.epoch()
+    }
 }
 
 /// An outgoing message from an `[HpqMlsGroup]`.
