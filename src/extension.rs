@@ -4,7 +4,7 @@
 
 use openmls::{
     group::{GroupEpoch, GroupId},
-    prelude::{Capabilities, Ciphersuite, Extension, ExtensionType, UnknownExtension},
+    prelude::{Capabilities, Ciphersuite, Extension, ExtensionType, Extensions, UnknownExtension},
 };
 use tap::Pipe;
 use tls_codec::{Deserialize as _, Serialize as _, TlsDeserialize, TlsSerialize, TlsSize};
@@ -45,7 +45,7 @@ impl PqtMode {
 
 /// The HPQMLS extension, which is used to store HPQMLS-specific information
 /// in the extensions of an `[MlsGroup]`.
-#[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize)]
+#[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, PartialEq, Eq)]
 pub struct HpqMlsInfo {
     pub t_session_group_id: GroupId,
     pub pq_session_group_id: GroupId,
@@ -64,9 +64,22 @@ impl HpqMlsInfo {
             .pipe(Ok)
     }
 
-    pub(super) fn increment_epoch(&mut self) {
-        self.t_epoch = GroupEpoch::from(self.t_epoch.as_u64() + 1);
-        self.pq_epoch = GroupEpoch::from(self.pq_epoch.as_u64() + 1);
+    pub(super) fn set_epoch(&mut self, t_epoch: GroupEpoch, pq_epoch: GroupEpoch) {
+        self.t_epoch = t_epoch;
+        self.pq_epoch = pq_epoch;
+    }
+
+    pub(super) fn from_extensions(
+        extensions: &Extensions,
+    ) -> Result<Option<Self>, tls_codec::Error> {
+        if let Some(extension) = extensions.unknown(HPQMLS_EXTENSION_ID) {
+            extension
+                .0
+                .pipe_as_ref::<'_, [u8], _>(HpqMlsInfo::tls_deserialize_exact)
+                .map(Some)
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -98,11 +111,6 @@ pub(super) fn ensure_extension_support(
 impl HpqMlsGroup {
     /// Get the HPQMLS extension from the group, if it exists.
     pub fn hpq_info(&self) -> Option<HpqMlsInfo> {
-        self.t_group
-            .extensions()
-            .unknown(HPQMLS_EXTENSION_ID)?
-            .0
-            .pipe_as_ref::<'_, [u8], _>(HpqMlsInfo::tls_deserialize_exact)
-            .ok()
+        HpqMlsInfo::from_extensions(self.t_group.extensions()).ok()?
     }
 }

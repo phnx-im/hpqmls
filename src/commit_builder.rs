@@ -5,7 +5,7 @@
 use openmls::{
     group::{
         CommitBuilder as MlsGroupCommitBuilder, CommitBuilderStageError, CommitMessageBundle,
-        CreateCommitError as OpenMlsCreateCommitError, Initial, QueuedProposal,
+        CreateCommitError as OpenMlsCreateCommitError, GroupEpoch, Initial, QueuedProposal,
     },
     prelude::{LeafNodeIndex, LeafNodeParameters, PreSharedKeyProposal, Proposal, ProposalType},
     storage::OpenMlsProvider,
@@ -252,7 +252,12 @@ impl<'a> CommitBuilder<'a> {
             .group
             .hpq_info()
             .ok_or_else(|| CreateCommitError::MissingHpqInfo)?;
-        current_hpq_info.increment_epoch();
+        let new_t_epoch = self.group.t_group.epoch().as_u64() + 1;
+        let new_pq_epoch = self.group.pq_group.epoch().as_u64() + 1;
+        current_hpq_info.set_epoch(
+            GroupEpoch::from(new_t_epoch),
+            GroupEpoch::from(new_pq_epoch),
+        );
 
         let mut current_extensions = self.group.t_group.extensions().clone();
         current_extensions.add_or_replace(current_hpq_info.to_extension()?);
