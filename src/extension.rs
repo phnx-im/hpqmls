@@ -82,9 +82,7 @@ impl HpqMlsInfo {
         self.pq_epoch = pq_epoch;
     }
 
-    pub(super) fn from_extensions(
-        extensions: &Extensions,
-    ) -> Result<Option<Self>, tls_codec::Error> {
+    pub fn from_extensions(extensions: &Extensions) -> Result<Option<Self>, tls_codec::Error> {
         if let Some(extension) = extensions.unknown(HPQMLS_EXTENSION_ID) {
             extension
                 .0
