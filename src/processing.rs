@@ -7,8 +7,8 @@ use std::fmt::Debug;
 use openmls::{
     group::{ProcessMessageError, StagedCommit},
     prelude::{
-        Credential, LeafNodeIndex, MlsMessageBodyIn, ProcessedMessage, ProcessedMessageContent,
-        Proposal, ProposalType, ProtocolMessage, Sender,
+        Credential, LeafNodeIndex, ProcessedMessage, ProcessedMessageContent, Proposal,
+        ProposalType, Sender,
     },
     schedule::{ExternalPsk, PreSharedKeyId, Psk},
     storage::OpenMlsProvider,
@@ -20,15 +20,15 @@ use tls_codec::Serialize;
 use crate::{
     HpqMlsGroup,
     extension::{HPQMLS_EXTENSION_ID, HpqMlsInfo},
-    messages::HpqMlsMessageIn,
+    messages::HpqProtocolMessage,
     psk::{HpqPskError, HpqPskId, store_psk},
 };
 
 /// A bundle consisting of the processed messages of both the traditional and
 /// the PQ group.
 pub struct HpqProcessedMessage {
-    t_message: ProcessedMessage,
-    pq_message: ProcessedMessage,
+    pub t_message: ProcessedMessage,
+    pub pq_message: ProcessedMessage,
 }
 
 /// A bundle consisting of the staged commits of both the traditional and the
@@ -52,16 +52,6 @@ impl HpqProcessedMessage {
             t_staged_commit,
             pq_staged_commit,
         })
-    }
-}
-
-fn into_protocol_message(
-    message: MlsMessageBodyIn,
-) -> Result<ProtocolMessage, ProcessMessageError> {
-    match message {
-        MlsMessageBodyIn::PrivateMessage(pm) => Ok(ProtocolMessage::PrivateMessage(pm)),
-        MlsMessageBodyIn::PublicMessage(pm) => Ok(ProtocolMessage::PublicMessage(pm.into())),
-        _ => Err(ProcessMessageError::IncompatibleWireFormat),
     }
 }
 
@@ -279,17 +269,17 @@ impl HpqMlsGroup {
     pub fn process_message<F, Provider: OpenMlsProvider>(
         &mut self,
         provider: &Provider,
-        message: HpqMlsMessageIn,
+        message: impl Into<HpqProtocolMessage>,
         sender_equivalence: F,
     ) -> Result<HpqProcessedMessage, HpqProcessMessageError<Provider::StorageError>>
     where
         F: Fn(&Credential, &Credential) -> bool,
     {
+        let protocol_message: HpqProtocolMessage = message.into();
         // We only export a PSK if we process a PQ message
-        let pq_protocol_message = into_protocol_message(message.pq_message.extract())?;
         let mut pq_message = self
             .pq_group
-            .process_message(provider, pq_protocol_message)?;
+            .process_message(provider, protocol_message.pq_protocol_message)?;
 
         let msg_type = MessageType::new(pq_message.content(), &sender_equivalence)
             .ok_or(HpqProcessMessageError::InvalidMessageType)?;
@@ -321,8 +311,9 @@ impl HpqMlsGroup {
             .pipe(|id| store_psk(provider, id, &psk_value))?;
         }
 
-        let t_protocol_message = into_protocol_message(message.t_message.extract())?;
-        let t_message = self.t_group.process_message(provider, t_protocol_message)?;
+        let t_message = self
+            .t_group
+            .process_message(provider, protocol_message.t_protocol_message)?;
 
         let msg_type = MessageType::new(t_message.content(), &sender_equivalence)
             .ok_or(HpqProcessMessageError::InvalidMessageType)?;

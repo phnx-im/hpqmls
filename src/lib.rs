@@ -20,7 +20,7 @@
 //! traditional authentication.
 
 use openmls::{
-    group::{GroupId, MlsGroup},
+    group::{GroupEpoch, GroupId, MlsGroup},
     prelude::{Ciphersuite, LeafNodeIndex, OpenMlsRand},
     storage::StorageProvider,
 };
@@ -119,6 +119,16 @@ impl HpqMlsGroup {
             t_ciphersuite: self.t_group.ciphersuite(),
             pq_ciphersuite: self.pq_group.ciphersuite(),
         }
+    }
+
+    /// Returns the current epoch of the traditional group.
+    pub fn t_epoch(&self) -> GroupEpoch {
+        self.t_group.epoch()
+    }
+
+    /// Returns the current epoch of the post-quantum group.
+    pub fn pq_epoch(&self) -> GroupEpoch {
+        self.pq_group.epoch()
     }
 
     /// Returns the `[HpqVerifyingKey]` of the member at the given index.
