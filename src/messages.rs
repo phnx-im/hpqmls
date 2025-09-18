@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use openmls::{
+    group::GroupEpoch,
     prelude::{
         Ciphersuite, Credential, KeyPackage, KeyPackageIn, MlsMessageBodyIn, MlsMessageIn,
         MlsMessageOut, OpenMlsCrypto, OpenMlsSignaturePublicKey, ProtocolMessage, ProtocolVersion,
