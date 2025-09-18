@@ -9,7 +9,7 @@ use openmls::{
 use tap::Pipe;
 use tls_codec::{Deserialize as _, Serialize as _, TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::{HpqCiphersuite, HpqMlsGroup};
+use crate::{HpqCiphersuite, HpqGroupId, HpqMlsGroup};
 
 pub const HPQMLS_EXTENSION_ID: u16 = 0xFF01;
 pub const HPQMLS_EXTENSION_TYPE: ExtensionType = ExtensionType::Unknown(HPQMLS_EXTENSION_ID);
@@ -69,9 +69,7 @@ impl HpqMlsInfo {
         self.pq_epoch = pq_epoch;
     }
 
-    pub(super) fn from_extensions(
-        extensions: &Extensions,
-    ) -> Result<Option<Self>, tls_codec::Error> {
+    pub fn from_extensions(extensions: &Extensions) -> Result<Option<Self>, tls_codec::Error> {
         if let Some(extension) = extensions.unknown(HPQMLS_EXTENSION_ID) {
             extension
                 .0
@@ -79,6 +77,13 @@ impl HpqMlsInfo {
                 .map(Some)
         } else {
             Ok(None)
+        }
+    }
+
+    pub fn group_id(&self) -> HpqGroupId {
+        HpqGroupId {
+            t_group_id: self.t_session_group_id.clone(),
+            pq_group_id: self.pq_session_group_id.clone(),
         }
     }
 }

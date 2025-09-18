@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use hpqmls::{HpqMlsGroup, authentication::HpqSigner as _, extension::PqtMode};
+use hpqmls::{
+    HpqMlsGroup, authentication::HpqSigner as _, extension::PqtMode, messages::HpqMlsMessageIn,
+};
 use openmls::{
     group::{GroupId, MlsGroupJoinConfig},
     prelude::{Credential, LeafNodeIndex, MlsMessageIn, OpenMlsProvider, ProcessedMessageContent},
@@ -87,13 +89,12 @@ fn update_group_helper(group: JoinedGroup) -> JoinedGroup {
         .unwrap();
     alice_group.merge_pending_commit(&alice.provider).unwrap();
 
+    let message_in = HpqMlsMessageIn::try_from(alice_commit_bundle.commit).unwrap();
+    let protocol_message = message_in.into_protocol_message().unwrap();
+
     // Bob processes Alice's update
     let processed_message = bob_group
-        .process_message(
-            &bob.provider,
-            alice_commit_bundle.commit.try_into().unwrap(),
-            compare_credentials,
-        )
+        .process_message(&bob.provider, protocol_message, compare_credentials)
         .unwrap();
     bob_group
         .merge_staged_commit(

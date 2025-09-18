@@ -3,10 +3,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use openmls::{
+    group::GroupEpoch,
     prelude::{
-        Ciphersuite, KeyPackage, KeyPackageIn, MlsMessageBodyIn, MlsMessageIn, MlsMessageOut,
-        OpenMlsCrypto, OpenMlsSignaturePublicKey, ProtocolVersion, RatchetTreeIn, SignatureError,
-        Verifiable as _, Welcome,
+        Ciphersuite, Credential, KeyPackage, KeyPackageIn, MlsMessageBodyIn, MlsMessageIn,
+        MlsMessageOut, OpenMlsCrypto, OpenMlsSignaturePublicKey, ProtocolMessage, ProtocolVersion,
+        RatchetTreeIn, SignatureError, Verifiable as _, Welcome,
         group_info::{GroupInfo, VerifiableGroupInfo},
     },
     treesync::RatchetTree,
@@ -14,7 +15,7 @@ use openmls::{
 use serde::{Deserialize, Serialize};
 use tls_codec::{Deserialize as _, Serialize as _, TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::{authentication::HpqVerifyingKey, extension::PqtMode};
+use crate::{HpqGroupId, authentication::HpqVerifyingKey, extension::PqtMode};
 
 /// An incoming message for processing by an `[HpqMlsGroup]`.
 #[derive(Debug, Clone, TlsDeserialize, TlsSize)]
@@ -48,6 +49,37 @@ impl HpqMlsMessageIn {
             t_key_package,
             pq_key_package,
         })
+    }
+
+    pub fn into_protocol_message(self) -> Option<HpqProtocolMessage> {
+        let t_protocol_message = self.t_message.try_into_protocol_message().ok()?;
+        let pq_protocol_message = self.pq_message.try_into_protocol_message().ok()?;
+        Some(HpqProtocolMessage {
+            t_protocol_message,
+            pq_protocol_message,
+        })
+    }
+}
+
+pub struct HpqProtocolMessage {
+    pub(crate) t_protocol_message: ProtocolMessage,
+    pub(crate) pq_protocol_message: ProtocolMessage,
+}
+
+impl HpqProtocolMessage {
+    pub fn group_id(&self) -> HpqGroupId {
+        HpqGroupId {
+            t_group_id: self.t_protocol_message.group_id().clone(),
+            pq_group_id: self.pq_protocol_message.group_id().clone(),
+        }
+    }
+
+    pub fn t_epoch(&self) -> GroupEpoch {
+        self.t_protocol_message.epoch()
+    }
+
+    pub fn pq_epoch(&self) -> GroupEpoch {
+        self.pq_protocol_message.epoch()
     }
 }
 
@@ -122,6 +154,16 @@ impl HpqKeyPackage {
             Ciphersuite::MLS_256_MLKEM1024_AES256GCM_SHA512_MLDSA87 => PqtMode::ConfAndAuth,
             _ => PqtMode::ConfOnly,
         }
+    }
+
+    /// Returns the credential of the T [`KeyPackage`].
+    pub fn t_credential(&self) -> &Credential {
+        self.t_key_package.leaf_node().credential()
+    }
+
+    /// Returns the credential of the PQ [`KeyPackage`].
+    pub fn pq_credential(&self) -> &Credential {
+        self.pq_key_package.leaf_node().credential()
     }
 }
 
