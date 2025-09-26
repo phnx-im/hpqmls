@@ -59,7 +59,7 @@ impl HpqProcessedMessage {
 #[derive(Debug, Error)]
 pub enum HpqProcessMessageError<StorageError> {
     #[error("Failed to process message: {0}")]
-    Processing(#[from] ProcessMessageError),
+    Processing(#[from] ProcessMessageError<StorageError>),
     #[error(transparent)]
     Psk(#[from] HpqPskError<StorageError>),
     #[error("The message type is invalid for processing.")]

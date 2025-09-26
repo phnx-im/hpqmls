@@ -22,8 +22,3 @@ pub fn assert_groups_eq(group1: &mut HpqMlsGroup, group2: &mut HpqMlsGroup) {
         "pq_group secrets do not match"
     );
 }
-
-#[allow(dead_code)]
-pub fn init_logging() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}
