@@ -77,6 +77,13 @@ pub struct ApqProtocolMessage {
 }
 
 impl ApqProtocolMessage {
+    pub fn new(t_protocol_message: ProtocolMessage, pq_protocol_message: ProtocolMessage) -> Self {
+        Self {
+            t_protocol_message,
+            pq_protocol_message,
+        }
+    }
+
     pub fn group_id(&self) -> ApqGroupId {
         ApqGroupId {
             t_group_id: self.t_protocol_message.group_id().clone(),
@@ -268,6 +275,19 @@ impl ApqKeyPackageIn {
 pub struct ApqGroupInfo {
     pub(crate) t_group_info: GroupInfo,
     pub(crate) pq_group_info: GroupInfo,
+}
+
+impl ApqGroupInfo {
+    pub fn new(t_group_info: GroupInfo, pq_group_info: GroupInfo) -> Self {
+        Self {
+            t_group_info,
+            pq_group_info,
+        }
+    }
+
+    pub fn into_parts(self) -> (GroupInfo, GroupInfo) {
+        (self.t_group_info, self.pq_group_info)
+    }
 }
 
 impl From<ApqGroupInfo> for ApqMlsMessageOut {

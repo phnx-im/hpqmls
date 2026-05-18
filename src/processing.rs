@@ -35,12 +35,6 @@ pub struct ApqProcessedMessage {
     pub pq_message: ProcessedMessage,
 }
 
-/// A bundle consisting of the processed public messages of both the traditional and the PQ group.
-pub struct ApqProcessedPublicMessage {
-    pub t_message: ProcessedMessage,
-    pub pq_message: ProcessedMessage,
-}
-
 /// A bundle consisting of the staged commits of both the traditional and the
 /// PQ group.
 pub struct ApqStagedCommit {
@@ -76,7 +70,7 @@ pub enum ApqProcessMessageError<StorageError> {
     Validation(#[from] ApqProcessMessageValidationError),
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Clone)]
 pub enum ApqProcessPublicMessageError {
     #[error(transparent)]
     Processing(#[from] PublicProcessMessageError),
@@ -84,7 +78,7 @@ pub enum ApqProcessPublicMessageError {
     Validation(#[from] ApqProcessMessageValidationError),
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq, Clone, Copy)]
 pub enum ApqProcessMessageValidationError {
     #[error("The message type is invalid for processing.")]
     InvalidMessageType,
@@ -425,7 +419,7 @@ impl ApqPublicGroupMut<'_> {
         crypto: &Crypto,
         message: impl Into<ApqProtocolMessage>,
         sender_equivalence: F,
-    ) -> Result<ApqProcessedPublicMessage, ApqProcessPublicMessageError>
+    ) -> Result<ApqProcessedMessage, ApqProcessPublicMessageError>
     where
         F: Fn(&Credential, &Credential) -> bool,
     {
@@ -433,7 +427,7 @@ impl ApqPublicGroupMut<'_> {
 
         let pq_message = self
             .pq_public_group
-            .process_message(crypto, protocol_message.pq_protocol_message)?;
+            .process_message_with_app_data_updates(crypto, protocol_message.pq_protocol_message)?;
         let pq_message_info = MessageInfo::new(
             pq_message.content(),
             pq_message.sender().clone(),
@@ -442,7 +436,7 @@ impl ApqPublicGroupMut<'_> {
 
         let t_message = self
             .t_public_group
-            .process_message(crypto, protocol_message.t_protocol_message)?;
+            .process_message_with_app_data_updates(crypto, protocol_message.t_protocol_message)?;
         let t_message_info = MessageInfo::new(
             t_message.content(),
             t_message.sender().clone(),
@@ -460,7 +454,7 @@ impl ApqPublicGroupMut<'_> {
         let t_params = ValidationParams::from_public_group(self.t_public_group);
         ValidationParams::validate(pq_params, t_params, &pq_message, &t_message)?;
 
-        Ok(ApqProcessedPublicMessage {
+        Ok(ApqProcessedMessage {
             t_message,
             pq_message,
         })
