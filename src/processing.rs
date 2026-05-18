@@ -7,9 +7,8 @@ use std::fmt::Debug;
 use openmls::{
     component::ComponentData,
     group::{
-        AppDataUpdates, GroupEpoch, GroupId, MlsGroup, ProcessMessageError,
-        ProcessedMessageSafeExportSecretError, PublicGroup, PublicProcessMessageError,
-        StagedCommit, StagedSafeExportSecretError,
+        AppDataUpdates, GroupEpoch, GroupId, MlsGroup, ProcessMessageError, PublicGroup,
+        PublicProcessMessageError, StagedCommit,
     },
     prelude::{
         AppDataUpdateOperation, Ciphersuite, Credential, LeafNodeIndex, OpenMlsCrypto,
@@ -352,41 +351,34 @@ impl ApqMlsGroupMut<'_> {
             &sender_equivalence,
         )?;
 
-        // If we have a commit message, we need to export the PSK
-        if matches!(
-            pq_message.content(),
-            ProcessedMessageContent::StagedCommitMessage(_)
-        ) {
-            match pq_message.safe_export_secret(provider.crypto(), APQMLS_COMPONENT_ID) {
-                Ok(apq_exporter_bytes) => {
-                    let apq_exporter: Secret = apq_exporter_bytes.into();
+        // If we have a commit message and it is not a self-removal, we need to export the PSK.
+        //
+        // Self-removal is a special case where PSK injection should be skipped: The T group commit
+        // also removes us, so OpenMLS returns early before reaching the key schedule.
+        if let ProcessedMessageContent::StagedCommitMessage(staged_commit) = pq_message.content()
+            && !staged_commit.self_removed()
+        {
+            let apq_exporter_bytes = pq_message
+                .safe_export_secret(provider.crypto(), APQMLS_COMPONENT_ID)
+                .map_err(ApqPskError::ExportFromProcessed)?;
 
-                    let apq_psk_id = apq_exporter
-                        .derive_secret(provider.crypto(), self.t_group.ciphersuite(), "psk_id")
-                        .map_err(ApqPskError::DerivingPskId)?;
-                    let apq_psk = apq_exporter
-                        .derive_secret(provider.crypto(), self.t_group.ciphersuite(), "psk")
-                        .map_err(ApqPskError::DerivingPskId)?;
-                    drop(apq_exporter); // Zeroize the secret
+            let apq_exporter: Secret = apq_exporter_bytes.into();
 
-                    let psk = Psk::Application(ApplicationPsk::new(
-                        APQMLS_COMPONENT_ID,
-                        apq_psk_id.as_slice().into(),
-                    ));
-                    let id = PreSharedKeyId::new(self.t_group.ciphersuite(), provider.rand(), psk)
-                        .map_err(ApqPskError::DerivingPskId)?;
-                    store_psk(provider, id, apq_psk.as_slice())?;
-                }
-                Err(ProcessedMessageSafeExportSecretError::SafeExportSecretError(
-                    StagedSafeExportSecretError::NotGroupMember,
-                )) => {
-                    // Special case: the commit removes us from the PQ group.
-                    //
-                    // Skip PSK injection: the T group commit also removes us, so OpenMLS returns early
-                    // before reaching the key schedule.
-                }
-                Err(e) => return Err(ApqPskError::ExportFromProcessed(e).into()),
-            }
+            let apq_psk_id = apq_exporter
+                .derive_secret(provider.crypto(), self.t_group.ciphersuite(), "psk_id")
+                .map_err(ApqPskError::DerivingPskId)?;
+            let apq_psk = apq_exporter
+                .derive_secret(provider.crypto(), self.t_group.ciphersuite(), "psk")
+                .map_err(ApqPskError::DerivingPskId)?;
+            drop(apq_exporter); // Zeroize the secret
+
+            let psk = Psk::Application(ApplicationPsk::new(
+                APQMLS_COMPONENT_ID,
+                apq_psk_id.as_slice().into(),
+            ));
+            let id = PreSharedKeyId::new(self.t_group.ciphersuite(), provider.rand(), psk)
+                .map_err(ApqPskError::DerivingPskId)?;
+            store_psk(provider, id, apq_psk.as_slice())?;
         }
 
         let unverified_t_message = self
