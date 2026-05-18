@@ -39,6 +39,7 @@ mod merging;
 pub mod messages;
 pub mod processing;
 mod psk;
+pub mod public_group;
 mod secret;
 pub mod welcome;
 
@@ -96,21 +97,23 @@ impl ApqGroupId {
     }
 }
 
-/// An APQMLS group, consisting of a traditional MLS group and a post-quantum MLS
-/// group. The two traditional group can be used independently, except for
-/// membership updates.
+/// An APQMLS group, consisting of a traditional MLS group and a post-quantum MLS group.
+///
+/// The two groups can be used independently, except for membership updates.
 #[derive(Debug)]
 pub struct ApqMlsGroup {
     pq_group: MlsGroup,
     pub t_group: MlsGroup,
 }
 
-pub(crate) struct ApqMlsGroupMut<'a> {
+/// Same as [`ApqMlsGroup`], but references MLS groups instead of owning them.
+pub struct ApqMlsGroupMut<'a> {
     t_group: &'a mut MlsGroup,
     pq_group: &'a mut MlsGroup,
 }
 
 impl<'a> ApqMlsGroupMut<'a> {
+    /// A non-owning version of [`ApqMlsGroupMut::from_groups`].
     pub fn from_groups(t_group: &'a mut MlsGroup, pq_group: &'a mut MlsGroup) -> Self {
         Self { t_group, pq_group }
     }
@@ -120,6 +123,10 @@ impl ApqMlsGroup {
     /// Create a new APQMLS group from the traditional and post-quantum MLS groups.
     pub fn from_groups(t_group: MlsGroup, pq_group: MlsGroup) -> Self {
         Self { t_group, pq_group }
+    }
+
+    pub fn as_mut(&mut self) -> ApqMlsGroupMut<'_> {
+        ApqMlsGroupMut::from_groups(&mut self.t_group, &mut self.pq_group)
     }
 
     pub fn into_groups(self) -> (MlsGroup, MlsGroup) {

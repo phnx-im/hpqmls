@@ -7,13 +7,14 @@ use std::fmt::Debug;
 use openmls::{
     component::ComponentData,
     group::{
-        AppDataUpdates, MlsGroup, ProcessMessageError, ProcessedMessageSafeExportSecretError,
+        AppDataUpdates, GroupEpoch, GroupId, MlsGroup, ProcessMessageError,
+        ProcessedMessageSafeExportSecretError, PublicGroup, PublicProcessMessageError,
         StagedCommit, StagedSafeExportSecretError,
     },
     prelude::{
-        AppDataUpdateOperation, Credential, LeafNodeIndex, ProcessedMessage,
-        ProcessedMessageContent, Proposal, ProposalIn, ProposalOrRefIn, ProposalType, Sender,
-        UnverifiedMessage,
+        AppDataUpdateOperation, Ciphersuite, Credential, LeafNodeIndex, OpenMlsCrypto,
+        ProcessedMessage, ProcessedMessageContent, Proposal, ProposalIn, ProposalOrRefIn,
+        ProposalType, Sender, UnverifiedMessage,
     },
     schedule::{PreSharedKeyId, Psk, psk::ApplicationPsk},
     storage::OpenMlsProvider,
@@ -21,16 +22,22 @@ use openmls::{
 use thiserror::Error;
 
 use crate::{
-    ApqMlsGroup,
+    ApqMlsGroup, ApqMlsGroupMut,
     extension::{APQMLS_COMPONENT_ID, ApqInfo},
     messages::ApqProtocolMessage,
     psk::{ApqPskError, store_psk},
+    public_group::ApqPublicGroupMut,
     secret::Secret,
 };
 
-/// A bundle consisting of the processed messages of both the traditional and
-/// the PQ group.
+/// A bundle consisting of the processed messages of both the traditional and the PQ group.
 pub struct ApqProcessedMessage {
+    pub t_message: ProcessedMessage,
+    pub pq_message: ProcessedMessage,
+}
+
+/// A bundle consisting of the processed public messages of both the traditional and the PQ group.
+pub struct ApqProcessedPublicMessage {
     pub t_message: ProcessedMessage,
     pub pq_message: ProcessedMessage,
 }
@@ -66,6 +73,20 @@ pub enum ApqProcessMessageError<StorageError> {
     Processing(#[from] ProcessMessageError<StorageError>),
     #[error(transparent)]
     Psk(#[from] ApqPskError<StorageError>),
+    #[error(transparent)]
+    Validation(#[from] ApqProcessMessageValidationError),
+}
+
+#[derive(Debug, Error)]
+pub enum ApqProcessPublicMessageError {
+    #[error(transparent)]
+    Processing(#[from] PublicProcessMessageError),
+    #[error(transparent)]
+    Validation(#[from] ApqProcessMessageValidationError),
+}
+
+#[derive(Debug, Error)]
+pub enum ApqProcessMessageValidationError {
     #[error("The message type is invalid for processing.")]
     InvalidMessageType,
     #[error("The MLS messages don't match.")]
@@ -245,6 +266,21 @@ struct MessageInfo<F: Fn(&Credential, &Credential) -> bool> {
     sender: Sender,
 }
 
+impl<F: Fn(&Credential, &Credential) -> bool> MessageInfo<F> {
+    fn new(
+        content: &ProcessedMessageContent,
+        sender: Sender,
+        sender_equivalence: F,
+    ) -> Result<Self, ApqProcessMessageValidationError>
+    where
+        F: Fn(&Credential, &Credential) -> bool,
+    {
+        let msg_type = MessageType::new(content, sender_equivalence)
+            .ok_or(ApqProcessMessageValidationError::InvalidMessageType)?;
+        Ok(Self { msg_type, sender })
+    }
+}
+
 impl<F: Fn(&Credential, &Credential) -> bool> Debug for MessageInfo<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MessageInfo")
@@ -261,7 +297,7 @@ impl<F: Fn(&Credential, &Credential) -> bool> PartialEq for MessageInfo<F> {
 }
 
 impl ApqMlsGroup {
-    /// See the free function [`process_message`].
+    /// See [`ApqMlsGroupMut::process_message`].
     pub fn process_message<F, Provider: OpenMlsProvider>(
         &mut self,
         provider: &Provider,
@@ -271,157 +307,250 @@ impl ApqMlsGroup {
     where
         F: Fn(&Credential, &Credential) -> bool,
     {
-        process_message(
-            &mut self.t_group,
-            &mut self.pq_group,
-            provider,
-            message,
-            sender_equivalence,
-        )
+        self.as_mut()
+            .process_message(provider, message, sender_equivalence)
     }
 }
 
-/// Processes an incoming APQMLS message.
-///
-/// Parses incoming messages from the DS. Checks for syntactic errors and makes some semantic checks
-/// as well. If the input is an encrypted message, it will be decrypted. This processing function
-/// does syntactic and semantic validation of the message. It returns a [ProcessedMessage] enum.
-///
-/// # Errors
-///
-/// Returns an [`ProcessMessageError`] when the validation checks fail with the exact reason of the
-/// failure.
-pub fn process_message<F, Provider: OpenMlsProvider>(
-    t_group: &mut MlsGroup,
-    pq_group: &mut MlsGroup,
-    provider: &Provider,
-    message: impl Into<ApqProtocolMessage>,
-    sender_equivalence: F,
-) -> Result<ApqProcessedMessage, ApqProcessMessageError<Provider::StorageError>>
-where
-    F: Fn(&Credential, &Credential) -> bool,
-{
-    let protocol_message: ApqProtocolMessage = message.into();
-    // We only export a PSK if we process a PQ message
-    let unverified_pq_message =
-        pq_group.unprotect_message(provider, protocol_message.pq_protocol_message)?;
-    let pq_updates = extract_app_data_updates(pq_group, &unverified_pq_message);
-    let mut pq_message = pq_group.process_unverified_message_with_app_data_updates(
-        provider,
-        unverified_pq_message,
-        pq_updates,
-    )?;
-
-    let msg_type = MessageType::new(pq_message.content(), &sender_equivalence)
-        .ok_or(ApqProcessMessageError::InvalidMessageType)?;
-    let pq_message_info = MessageInfo {
-        msg_type,
-        sender: pq_message.sender().clone(),
-    };
-
-    // If we have a commit message, we need to export the PSK
-    if matches!(
-        pq_message.content(),
-        ProcessedMessageContent::StagedCommitMessage(_)
-    ) {
-        match pq_message.safe_export_secret(provider.crypto(), APQMLS_COMPONENT_ID) {
-            Ok(apq_exporter_bytes) => {
-                let apq_exporter: Secret = apq_exporter_bytes.into();
-
-                let apq_psk_id = apq_exporter
-                    .derive_secret(provider.crypto(), t_group.ciphersuite(), "psk_id")
-                    .map_err(ApqPskError::DerivingPskId)?;
-                let apq_psk = apq_exporter
-                    .derive_secret(provider.crypto(), t_group.ciphersuite(), "psk")
-                    .map_err(ApqPskError::DerivingPskId)?;
-                drop(apq_exporter); // Zeroize the secret
-
-                let psk = Psk::Application(ApplicationPsk::new(
-                    APQMLS_COMPONENT_ID,
-                    apq_psk_id.as_slice().into(),
-                ));
-                let id = PreSharedKeyId::new(t_group.ciphersuite(), provider.rand(), psk)
-                    .map_err(ApqPskError::DerivingPskId)?;
-                store_psk(provider, id, apq_psk.as_slice())?;
-            }
-            Err(ProcessedMessageSafeExportSecretError::SafeExportSecretError(
-                StagedSafeExportSecretError::NotGroupMember,
-            )) => {
-                // Special case: the commit removes us from the PQ group.
-                //
-                // Skip PSK injection: the T group commit also removes us, so OpenMLS returns early
-                // before reaching the key schedule.
-            }
-            Err(e) => return Err(ApqPskError::ExportFromProcessed(e).into()),
-        }
-    }
-
-    let unverified_t_message =
-        t_group.unprotect_message(provider, protocol_message.t_protocol_message)?;
-    let t_updates = extract_app_data_updates(t_group, &unverified_t_message);
-    let t_message = t_group.process_unverified_message_with_app_data_updates(
-        provider,
-        unverified_t_message,
-        t_updates,
-    )?;
-
-    let msg_type = MessageType::new(t_message.content(), &sender_equivalence)
-        .ok_or(ApqProcessMessageError::InvalidMessageType)?;
-    let t_message_info = MessageInfo {
-        msg_type,
-        sender: t_message.sender().clone(),
-    };
-
-    // Make sure that messages match up
-    if pq_message_info != t_message_info {
-        return Err(ApqProcessMessageError::MismatchedMessages);
-    }
-
-    // If both are commits, the [`ApqInfo`] component must be updated and in
-    // line with the info of both groups
-    if let ProcessedMessageContent::StagedCommitMessage(pq_staged_commit) = pq_message.content()
-        && let ProcessedMessageContent::StagedCommitMessage(t_staged_commit) = t_message.content()
+impl ApqMlsGroupMut<'_> {
+    /// Processes an incoming APQMLS message.
+    ///
+    /// Parses incoming messages from the DS. Checks for syntactic errors and makes some semantic checks
+    /// as well. If the input is an encrypted message, it will be decrypted. This processing function
+    /// does syntactic and semantic validation of the message. It returns a [ProcessedMessage] enum.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`ProcessMessageError`] when the validation checks fail with the exact reason of the
+    /// failure.
+    pub fn process_message<F, Provider: OpenMlsProvider>(
+        &mut self,
+        provider: &Provider,
+        message: impl Into<ApqProtocolMessage>,
+        sender_equivalence: F,
+    ) -> Result<ApqProcessedMessage, ApqProcessMessageError<Provider::StorageError>>
+    where
+        F: Fn(&Credential, &Credential) -> bool,
     {
-        let pq_apq_info = ApqInfo::from_extensions(pq_staged_commit.group_context().extensions())
-            .map_err(|_| ApqProcessMessageError::InvalidApqInfo)?
-            .ok_or(ApqProcessMessageError::MissingApqInfo)?;
-        let t_apq_info = ApqInfo::from_extensions(t_staged_commit.group_context().extensions())
-            .map_err(|_| ApqProcessMessageError::InvalidApqInfo)?
-            .ok_or(ApqProcessMessageError::MissingApqInfo)?;
+        let protocol_message: ApqProtocolMessage = message.into();
+        // We only export a PSK if we process a PQ message
+        let unverified_pq_message = self
+            .pq_group
+            .unprotect_message(provider, protocol_message.pq_protocol_message)?;
+        let pq_updates = extract_app_data_updates(self.pq_group, &unverified_pq_message);
+        let mut pq_message = self
+            .pq_group
+            .process_unverified_message_with_app_data_updates(
+                provider,
+                unverified_pq_message,
+                pq_updates,
+            )?;
 
-        // ApqInfo contents must match
-        let apq_info_match = pq_apq_info == t_apq_info;
+        let pq_message_info = MessageInfo::new(
+            pq_message.content(),
+            pq_message.sender().clone(),
+            &sender_equivalence,
+        )?;
 
-        // Epochs must be in line with the groups
-        let epochs_match = pq_apq_info.pq_epoch == pq_staged_commit.group_context().epoch()
-            && t_apq_info.t_epoch == t_staged_commit.group_context().epoch();
+        // If we have a commit message, we need to export the PSK
+        if matches!(
+            pq_message.content(),
+            ProcessedMessageContent::StagedCommitMessage(_)
+        ) {
+            match pq_message.safe_export_secret(provider.crypto(), APQMLS_COMPONENT_ID) {
+                Ok(apq_exporter_bytes) => {
+                    let apq_exporter: Secret = apq_exporter_bytes.into();
 
-        // New epochs must be one higher than the current ones
-        let epochs_are_incremented = pq_apq_info.pq_epoch.as_u64() == pq_group.epoch().as_u64() + 1
-            && t_apq_info.t_epoch.as_u64() == t_group.epoch().as_u64() + 1;
+                    let apq_psk_id = apq_exporter
+                        .derive_secret(provider.crypto(), self.t_group.ciphersuite(), "psk_id")
+                        .map_err(ApqPskError::DerivingPskId)?;
+                    let apq_psk = apq_exporter
+                        .derive_secret(provider.crypto(), self.t_group.ciphersuite(), "psk")
+                        .map_err(ApqPskError::DerivingPskId)?;
+                    drop(apq_exporter); // Zeroize the secret
 
-        // Group IDs must be in line with the groups
-        let group_ids_match = pq_apq_info.pq_session_group_id == *pq_group.group_id()
-            && t_apq_info.t_session_group_id == *t_group.group_id();
+                    let psk = Psk::Application(ApplicationPsk::new(
+                        APQMLS_COMPONENT_ID,
+                        apq_psk_id.as_slice().into(),
+                    ));
+                    let id = PreSharedKeyId::new(self.t_group.ciphersuite(), provider.rand(), psk)
+                        .map_err(ApqPskError::DerivingPskId)?;
+                    store_psk(provider, id, apq_psk.as_slice())?;
+                }
+                Err(ProcessedMessageSafeExportSecretError::SafeExportSecretError(
+                    StagedSafeExportSecretError::NotGroupMember,
+                )) => {
+                    // Special case: the commit removes us from the PQ group.
+                    //
+                    // Skip PSK injection: the T group commit also removes us, so OpenMLS returns early
+                    // before reaching the key schedule.
+                }
+                Err(e) => return Err(ApqPskError::ExportFromProcessed(e).into()),
+            }
+        }
 
-        // Ciphersuites must be in line with the groups
-        let ciphersuites_match = pq_apq_info.pq_cipher_suite == pq_group.ciphersuite()
-            && t_apq_info.t_cipher_suite == t_group.ciphersuite();
+        let unverified_t_message = self
+            .t_group
+            .unprotect_message(provider, protocol_message.t_protocol_message)?;
+        let t_updates = extract_app_data_updates(self.t_group, &unverified_t_message);
+        let t_message = self
+            .t_group
+            .process_unverified_message_with_app_data_updates(
+                provider,
+                unverified_t_message,
+                t_updates,
+            )?;
 
-        if !apq_info_match
-            || !epochs_match
-            || !epochs_are_incremented
-            || !group_ids_match
-            || !ciphersuites_match
-        {
-            return Err(ApqProcessMessageError::InvalidApqInfo);
+        let t_message_info = MessageInfo::new(
+            t_message.content(),
+            t_message.sender().clone(),
+            &sender_equivalence,
+        )?;
+
+        // Make sure that messages match up
+        if pq_message_info != t_message_info {
+            return Err(ApqProcessMessageValidationError::MismatchedMessages.into());
+        }
+
+        let pq_params = ValidationParams::from_mls_group(self.pq_group);
+        let t_params = ValidationParams::from_mls_group(self.t_group);
+        ValidationParams::validate(pq_params, t_params, &pq_message, &t_message)?;
+
+        Ok(ApqProcessedMessage {
+            t_message,
+            pq_message,
+        })
+    }
+}
+
+impl ApqPublicGroupMut<'_> {
+    /// Processes an incoming public AQPMLS message.
+    ///
+    /// Validates both messages, checks T/PQ consistency (same operator/sender), ApqInfo
+    /// epoch/group-id/ciphersuite invariants). No PSK derivation is performed.
+    pub fn process_message<Crypto: OpenMlsCrypto, F>(
+        &mut self,
+        crypto: &Crypto,
+        message: impl Into<ApqProtocolMessage>,
+        sender_equivalence: F,
+    ) -> Result<ApqProcessedPublicMessage, ApqProcessPublicMessageError>
+    where
+        F: Fn(&Credential, &Credential) -> bool,
+    {
+        let protocol_message: ApqProtocolMessage = message.into();
+
+        let pq_message = self
+            .pq_public_group
+            .process_message(crypto, protocol_message.pq_protocol_message)?;
+        let pq_message_info = MessageInfo::new(
+            pq_message.content(),
+            pq_message.sender().clone(),
+            &sender_equivalence,
+        )?;
+
+        let t_message = self
+            .t_public_group
+            .process_message(crypto, protocol_message.t_protocol_message)?;
+        let t_message_info = MessageInfo::new(
+            t_message.content(),
+            t_message.sender().clone(),
+            &sender_equivalence,
+        )?;
+
+        // Note: no PSK export/store
+
+        // Make sure that messages match up
+        if pq_message_info != t_message_info {
+            return Err(ApqProcessMessageValidationError::MismatchedMessages.into());
+        }
+
+        let pq_params = ValidationParams::from_public_group(self.pq_public_group);
+        let t_params = ValidationParams::from_public_group(self.t_public_group);
+        ValidationParams::validate(pq_params, t_params, &pq_message, &t_message)?;
+
+        Ok(ApqProcessedPublicMessage {
+            t_message,
+            pq_message,
+        })
+    }
+}
+
+struct ValidationParams<'a> {
+    epoch: GroupEpoch,
+    group_id: &'a GroupId,
+    ciphersuite: Ciphersuite,
+}
+
+impl<'a> ValidationParams<'a> {
+    fn from_mls_group(group: &'a MlsGroup) -> Self {
+        Self {
+            epoch: group.epoch(),
+            group_id: group.group_id(),
+            ciphersuite: group.ciphersuite(),
         }
     }
 
-    Ok(ApqProcessedMessage {
-        t_message,
-        pq_message,
-    })
+    fn from_public_group(group: &'a PublicGroup) -> Self {
+        Self {
+            epoch: group.group_context().epoch(),
+            group_id: group.group_context().group_id(),
+            ciphersuite: group.group_context().ciphersuite(),
+        }
+    }
+
+    fn validate(
+        pq_params: Self,
+        t_params: Self,
+        pq_message: &ProcessedMessage,
+        t_message: &ProcessedMessage,
+    ) -> Result<(), ApqProcessMessageValidationError> {
+        use ApqProcessMessageValidationError::*;
+
+        // If both are commits, the [`ApqInfo`] component must be in line with the info of both groups
+        if let ProcessedMessageContent::StagedCommitMessage(pq_staged_commit) = pq_message.content()
+            && let ProcessedMessageContent::StagedCommitMessage(t_staged_commit) =
+                t_message.content()
+        {
+            let pq_apq_info =
+                ApqInfo::from_extensions(pq_staged_commit.group_context().extensions())
+                    .map_err(|_| InvalidApqInfo)?
+                    .ok_or(MissingApqInfo)?;
+            let t_apq_info = ApqInfo::from_extensions(t_staged_commit.group_context().extensions())
+                .map_err(|_| InvalidApqInfo)?
+                .ok_or(MissingApqInfo)?;
+
+            // ApqInfo contents must match
+            let apq_info_match = pq_apq_info == t_apq_info;
+
+            // Epochs must be in line with the groups
+            let epochs_match = pq_apq_info.pq_epoch == pq_staged_commit.group_context().epoch()
+                && t_apq_info.t_epoch == t_staged_commit.group_context().epoch();
+
+            // New epochs must be one higher than the current ones
+            let epochs_are_incremented = pq_apq_info.pq_epoch.as_u64()
+                == pq_params.epoch.as_u64() + 1
+                && t_apq_info.t_epoch.as_u64() == t_params.epoch.as_u64() + 1;
+
+            // Group IDs must be in line with the groups
+            let group_ids_match = pq_apq_info.pq_session_group_id == *pq_params.group_id
+                && t_apq_info.t_session_group_id == *t_params.group_id;
+
+            // Ciphersuites must be in line with the groups
+            let ciphersuites_match = pq_apq_info.pq_cipher_suite == pq_params.ciphersuite
+                && t_apq_info.t_cipher_suite == t_params.ciphersuite;
+
+            if !apq_info_match
+                || !epochs_match
+                || !epochs_are_incremented
+                || !group_ids_match
+                || !ciphersuites_match
+            {
+                return Err(InvalidApqInfo);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 fn extract_app_data_updates(

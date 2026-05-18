@@ -4,10 +4,10 @@
 
 use openmls::{
     group::{MergeCommitError, MergePendingCommitError},
-    storage::{OpenMlsProvider, StorageProvider},
+    storage::{OpenMlsProvider, PublicStorageProvider, StorageProvider},
 };
 
-use crate::{ApqMlsGroup, processing::ApqStagedCommit};
+use crate::{ApqMlsGroup, processing::ApqStagedCommit, public_group::ApqPublicGroupMut};
 
 impl ApqMlsGroup {
     /// Merges the pending [`openmls::group::StagedCommit`] of the traditional group, as well as
@@ -45,6 +45,24 @@ impl ApqMlsGroup {
     ) -> Result<(), Storage::Error> {
         self.t_group.clear_pending_commit(provider)?;
         self.pq_group.clear_pending_commit(provider)?;
+        Ok(())
+    }
+}
+
+impl ApqPublicGroupMut<'_> {
+    /// Merge a [`openmls::group::StagedCommit`] into the public group.
+    pub fn merge_staged_commit<Storage: PublicStorageProvider>(
+        &mut self,
+        storage: &Storage,
+        staged_commit: ApqStagedCommit,
+    ) -> Result<(), MergeCommitError<Storage::Error>> {
+        let ApqStagedCommit {
+            t_staged_commit,
+            pq_staged_commit,
+        } = staged_commit;
+        self.pq_public_group
+            .merge_commit(storage, pq_staged_commit)?;
+        self.t_public_group.merge_commit(storage, t_staged_commit)?;
         Ok(())
     }
 }
