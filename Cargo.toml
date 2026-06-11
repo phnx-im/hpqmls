@@ -29,6 +29,8 @@ thiserror = "2.0.12"
 tls_codec = "0.4.2"
 
 [dev-dependencies]
+# `test-utils` exposes `MlsGroup::export_group_context` for the group context tests
+openmls = { version = "0.8.1", features = ["test-utils"] }
 openmls_rust_crypto = { version = "0.5.1", features = [
     "draft-ietf-mls-pq-ciphersuites",
 ] }

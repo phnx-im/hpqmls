@@ -3,10 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use openmls::{
-    group::{
-        JoinBuilder as OpenMlsJoinBuilder, LeafNodeLifetimePolicy, MlsGroup, MlsGroupJoinConfig,
-        ProcessedWelcome, StagedWelcome, WelcomeError as OpenMlsWelcomeError,
-    },
+    group::{MlsGroup, MlsGroupJoinConfig, StagedWelcome, WelcomeError as OpenMlsWelcomeError},
     prelude::Ciphersuite,
     storage::OpenMlsProvider,
 };
@@ -32,72 +29,6 @@ pub enum WelcomeError<StorageError> {
 pub struct StagedApqWelcome {
     t_staged_welcome: StagedWelcome,
     pq_staged_welcome: StagedWelcome,
-}
-
-/// Builder for joining an APQ group.
-pub struct JoinBuilder<'a, Provider: OpenMlsProvider> {
-    provider: &'a Provider,
-    t_processed_welcome: ProcessedWelcome,
-    pq_processed_welcome: ProcessedWelcome,
-    t_ciphersuite: Ciphersuite,
-    ratchet_tree: Option<ApqRatchetTreeIn>,
-    validate_lifetimes: LeafNodeLifetimePolicy,
-}
-
-impl<'a, Provider: OpenMlsProvider> JoinBuilder<'a, Provider> {
-    pub fn new(
-        provider: &'a Provider,
-        t_processed_welcome: ProcessedWelcome,
-        pq_processed_welcome: ProcessedWelcome,
-        t_ciphersuite: Ciphersuite,
-    ) -> Self {
-        Self {
-            provider,
-            t_processed_welcome,
-            pq_processed_welcome,
-            t_ciphersuite,
-            ratchet_tree: None,
-            validate_lifetimes: LeafNodeLifetimePolicy::Verify,
-        }
-    }
-
-    pub fn with_ratchet_tree(mut self, ratchet_tree: ApqRatchetTreeIn) -> Self {
-        self.ratchet_tree = Some(ratchet_tree);
-        self
-    }
-
-    pub fn skip_lifetime_validation(mut self) -> Self {
-        self.validate_lifetimes = LeafNodeLifetimePolicy::Skip;
-        self
-    }
-
-    pub fn build(self) -> Result<ApqMlsGroup, WelcomeError<Provider::StorageError>> {
-        let (t_ratchet_tree, pq_ratchet_tree) = self.ratchet_tree.map(|t| t.split()).unzip();
-
-        let mut pq_builder = OpenMlsJoinBuilder::new(self.provider, self.pq_processed_welcome);
-        if let Some(ratchet_tree) = pq_ratchet_tree {
-            pq_builder = pq_builder.with_ratchet_tree(ratchet_tree);
-        };
-        pq_builder = match self.validate_lifetimes {
-            LeafNodeLifetimePolicy::Skip => pq_builder.skip_lifetime_validation(),
-            LeafNodeLifetimePolicy::Verify => pq_builder,
-        };
-        let mut pq_group = pq_builder.build()?.into_group(self.provider)?;
-
-        derive_and_store_psk::<_, false>(self.provider, &mut pq_group, self.t_ciphersuite)?;
-
-        let mut t_builder = OpenMlsJoinBuilder::new(self.provider, self.t_processed_welcome);
-        if let Some(ratchet_tree) = t_ratchet_tree {
-            t_builder = t_builder.with_ratchet_tree(ratchet_tree);
-        };
-        t_builder = match self.validate_lifetimes {
-            LeafNodeLifetimePolicy::Skip => t_builder.skip_lifetime_validation(),
-            LeafNodeLifetimePolicy::Verify => t_builder,
-        };
-        let t_group = t_builder.build()?.into_group(self.provider)?;
-
-        Ok(ApqMlsGroup { t_group, pq_group })
-    }
 }
 
 pub fn derive_and_store_join_psk<Provider: OpenMlsProvider>(

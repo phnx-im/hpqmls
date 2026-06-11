@@ -125,38 +125,33 @@ pub(super) fn ensure_extension_support(
 pub(super) fn ensure_component_support(
     mut dictionary: AppDataDictionary,
 ) -> Result<AppDataDictionary, tls_codec::Error> {
-    dictionary.insert(
-        ComponentId::from(ComponentType::AppComponents),
-        [APQMLS_COMPONENT_ID].as_slice().tls_serialize_detached()?,
-    );
-    Ok(dictionary)
-}
-
-pub(super) fn ensure_leaf_node_component_support(
-    mut extensions: Extensions<LeafNode>,
-) -> Result<Extensions<LeafNode>, tls_codec::Error> {
-    let mut dictionary = extensions
-        .app_data_dictionary()
-        .map(|extension| extension.dictionary().clone())
-        .unwrap_or_default();
     let mut app_components: Vec<ComponentId> = dictionary
         .get(&ComponentId::from(ComponentType::AppComponents))
         .map(Vec::tls_deserialize_exact)
         .transpose()?
         .unwrap_or_default();
-
     if !app_components.contains(&APQMLS_COMPONENT_ID) {
         app_components.push(APQMLS_COMPONENT_ID);
         dictionary.insert(
             ComponentId::from(ComponentType::AppComponents),
             app_components.tls_serialize_detached()?,
         );
-        let extension = Extension::AppDataDictionary(AppDataDictionaryExtension::new(dictionary));
-        extensions
-            .add_or_replace(extension)
-            .expect("logic error: extension is valid");
     }
+    Ok(dictionary)
+}
 
+pub(super) fn ensure_leaf_node_component_support(
+    mut extensions: Extensions<LeafNode>,
+) -> Result<Extensions<LeafNode>, tls_codec::Error> {
+    let dictionary = extensions
+        .app_data_dictionary()
+        .map(|extension| extension.dictionary().clone())
+        .unwrap_or_default();
+    let dictionary = ensure_component_support(dictionary)?;
+    let extension = Extension::AppDataDictionary(AppDataDictionaryExtension::new(dictionary));
+    extensions
+        .add_or_replace(extension)
+        .expect("logic error: extension is valid");
     Ok(extensions)
 }
 
