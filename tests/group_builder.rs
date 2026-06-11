@@ -78,8 +78,8 @@ fn app_components(dictionary: &AppDataDictionary) -> Vec<ComponentId> {
     Vec::tls_deserialize_exact(bytes).unwrap()
 }
 
-/// Default behavior (no caller dictionary): both group contexts advertise the
-/// APQMLS component and carry the ApqInfo entry; SafeAAD is not required.
+/// Default behavior (no caller dictionary): both group contexts advertise the APQMLS component and
+/// carry the ApqInfo entry; SafeAAD is not required.
 #[test]
 fn default_dictionary() {
     let (_, group) = build_group(None, None);
@@ -94,8 +94,8 @@ fn default_dictionary() {
     }
 }
 
-/// A caller-provided dictionary entry survives the build and is merged with
-/// the APQMLS entries instead of being clobbered.
+/// A caller-provided dictionary entry survives the build and is merged with the APQMLS entries
+/// instead of being clobbered.
 #[test]
 fn caller_dictionary_is_merged() {
     let safe_aad = ComponentId::from(ComponentType::SafeAad);
@@ -137,8 +137,8 @@ fn caller_app_components_are_merged() {
     assert!(components.contains(&APQMLS_COMPONENT_ID));
 }
 
-/// Extensions are per-group: a dictionary provided only for the T group does
-/// not leak into the PQ group.
+/// Extensions are per-group: a dictionary provided only for the T group does not leak into the PQ
+/// group.
 #[test]
 fn asymmetric_extensions() {
     let safe_aad = ComponentId::from(ComponentType::SafeAad);
@@ -155,8 +155,8 @@ fn asymmetric_extensions() {
     }
 }
 
-/// The caller entry survives a commit: the commit-path dictionary updater must
-/// produce only the ApqInfo delta, leaving foreign entries in place.
+/// The caller entry survives a commit: the commit-path dictionary updater must produce only the
+/// ApqInfo delta, leaving foreign entries in place.
 #[test]
 fn caller_entry_survives_commit() {
     let safe_aad = ComponentId::from(ComponentType::SafeAad);
@@ -220,8 +220,8 @@ fn assert_joiner_inherited_dictionary(alice_group: &ApqMlsGroup, bob_group: &Apq
     }
 }
 
-/// A joiner via `ApqMlsGroup::new_from_welcome` inherits the creator's merged
-/// dictionary (incl. the SafeAad entry) through the welcome.
+/// A joiner via `ApqMlsGroup::new_from_welcome` inherits the creator's merged dictionary (incl. the
+/// SafeAad entry) through the welcome.
 #[test]
 fn joiner_inherits_dictionary_via_new_from_welcome() {
     let safe_aad = ComponentId::from(ComponentType::SafeAad);
@@ -249,9 +249,8 @@ fn joiner_inherits_dictionary_via_new_from_welcome() {
     assert_group_operational(&alice, &mut alice_group, &bob, &mut bob_group);
 }
 
-/// Verifies the joined group is fully operational, beyond context contents:
-/// shared group state, correct membership, and commits flowing in both
-/// directions after the join.
+/// Verifies the joined group is fully operational, beyond context contents: shared group state,
+/// correct membership, and commits flowing in both directions after the join.
 fn assert_group_operational(
     alice: &Client<OpenMlsRustCrypto>,
     alice_group: &mut ApqMlsGroup,
@@ -273,8 +272,8 @@ fn assert_group_operational(
         assert_eq!(group.pq_group().members().count(), 2);
     }
 
-    // Epoch secrets agree (this is what proves the joiner's PSK derivation
-    // between the PQ and T joins actually worked).
+    // Epoch secrets agree (this is what proves the joiner's PSK derivation between the PQ and T
+    // joins actually worked).
     assert_groups_eq(alice_group, bob_group);
 
     // Bob commits a self-update; Alice processes and merges it.
@@ -283,16 +282,11 @@ fn assert_group_operational(
     commit_and_process(alice, alice_group, bob, bob_group);
 
     // The SafeAad requirement survived both post-join commits.
-    assert!(
-        bob_group
-            .t_group
-            .export_group_context()
-            .safe_aad_required()
-    );
+    assert!(bob_group.t_group.export_group_context().safe_aad_required());
 }
 
-/// `committer` creates and merges a self-update commit; `processor` processes
-/// and merges it. Asserts both views agree afterwards.
+/// `committer` creates and merges a self-update commit; `processor` processes and merges it.
+/// Asserts both views agree afterwards.
 fn commit_and_process(
     committer: &Client<OpenMlsRustCrypto>,
     committer_group: &mut ApqMlsGroup,
