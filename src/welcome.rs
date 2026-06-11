@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use openmls::{
-    group::{MlsGroupJoinConfig, StagedWelcome, WelcomeError as OpenMlsWelcomeError},
+    group::{MlsGroup, MlsGroupJoinConfig, StagedWelcome, WelcomeError as OpenMlsWelcomeError},
+    prelude::Ciphersuite,
     storage::OpenMlsProvider,
 };
 use thiserror::Error;
@@ -30,6 +31,15 @@ pub struct StagedApqWelcome {
     pq_staged_welcome: StagedWelcome,
 }
 
+pub fn derive_and_store_join_psk<Provider: OpenMlsProvider>(
+    provider: &Provider,
+    pq_group: &mut MlsGroup,
+    t_ciphersuite: Ciphersuite,
+) -> Result<(), WelcomeError<Provider::StorageError>> {
+    derive_and_store_psk::<_, false>(provider, pq_group, t_ciphersuite)?;
+    Ok(())
+}
+
 impl ApqMlsGroup {
     /// Creates a new [`ApqMlsGroup`] from a welcome message.
     // TODO: Split into sans-io friendly parts.
@@ -43,13 +53,13 @@ impl ApqMlsGroup {
             Some(r) => (Some(r.t_ratchet_tree), Some(r.pq_ratchet_tree)),
             None => (None, None),
         };
-        let pq_staged_welcome = StagedWelcome::new_from_welcome(
+        let mut pq_group = StagedWelcome::new_from_welcome(
             provider,
             mls_group_config,
             welcome.pq_welcome,
             pq_ratchet_tree,
-        )?;
-        let mut pq_group = pq_staged_welcome.into_group(provider)?;
+        )?
+        .into_group(provider)?;
 
         let t_ciphersuite = welcome.t_welcome.ciphersuite();
 

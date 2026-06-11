@@ -29,6 +29,8 @@ thiserror = "2.0.12"
 tls_codec = "0.4.2"
 
 [dev-dependencies]
+# `test-utils` exposes `MlsGroup::export_group_context` for the group context tests
+openmls = { version = "0.8.1", features = ["test-utils"] }
 openmls_rust_crypto = { version = "0.5.1", features = [
     "draft-ietf-mls-pq-ciphersuites",
 ] }
@@ -69,9 +71,6 @@ openmls_basic_credential = { git = "https://github.com/boxdot/openmls", branch =
 
 # feat: add p384 support
 # <https://github.com/cryspen/hpke-rs/pull/150>
-hpke-rs = { git = "https://github.com/boxdot/hpke-rs", branch = "dima/p384" }
-hpke-rs-crypto = { git = "https://github.com/boxdot/hpke-rs", branch = "dima/p384" }
-hpke-rs-rust-crypto = { git = "https://github.com/boxdot/hpke-rs", branch = "dima/p384" }
-# hpke-rs = { path = "../hpke-rs" }
-# hpke-rs-crypto = { path = "../hpke-rs/traits/" }
-# hpke-rs-rust-crypto = { path = "../hpke-rs/rust_crypto_provider/" }
+hpke-rs = { git = "https://github.com/cryspen/hpke-rs", rev = "42f9b421d499dec01dcb3fd80d639669d9669c73" }
+hpke-rs-crypto = { git = "https://github.com/cryspen/hpke-rs", rev = "42f9b421d499dec01dcb3fd80d639669d9669c73" }
+hpke-rs-rust-crypto = { git = "https://github.com/cryspen/hpke-rs", rev = "42f9b421d499dec01dcb3fd80d639669d9669c73" }

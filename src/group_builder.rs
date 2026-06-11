@@ -3,14 +3,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use openmls::{
+    component::ComponentData,
     group::{
         GroupContext, GroupEpoch, GroupId, MlsGroupBuilder, NewGroupError as OpenMlsNewGroupError,
         WireFormatPolicy,
     },
     prelude::{
-        AppDataDictionary, AppDataDictionaryExtension, Capabilities, Extension, ExtensionType,
-        Extensions, InvalidExtensionError, LeafNode, Lifetime, ProposalType,
-        RequiredCapabilitiesExtension, SenderRatchetConfiguration,
+        AppDataDictionaryExtension, Capabilities, Extension, ExtensionType, Extensions,
+        InvalidExtensionError, LeafNode, Lifetime, ProposalType, RequiredCapabilitiesExtension,
+        SenderRatchetConfiguration,
     },
     storage::OpenMlsProvider,
     treesync::errors::LeafNodeValidationError,
@@ -108,18 +109,13 @@ impl GroupBuilder {
             .unwrap_or_else(|| ApqGroupId::random(provider.rand()));
 
         // Add required capabilities extension
-        let rc_extension = RequiredCapabilitiesExtension::new(
-            &[
-                ExtensionType::RequiredCapabilities,
-                ExtensionType::AppDataDictionary,
-            ],
-            &[ProposalType::AppDataUpdate],
-            &[],
-        )
-        .pipe(Extension::RequiredCapabilities);
+        let t_rc = merged_required_capabilities(self.t_extensions.required_capabilities())
+            .pipe(Extension::RequiredCapabilities);
+        let pq_rc = merged_required_capabilities(self.pq_extensions.required_capabilities())
+            .pipe(Extension::RequiredCapabilities);
 
-        self.t_extensions.add_or_replace(rc_extension.clone())?;
-        self.pq_extensions.add_or_replace(rc_extension)?;
+        self.t_extensions.add_or_replace(t_rc)?;
+        self.pq_extensions.add_or_replace(pq_rc)?;
 
         let info = ApqInfo {
             t_session_group_id: apq_group_id.t_group_id.clone(),
@@ -130,13 +126,10 @@ impl GroupBuilder {
             t_epoch: GroupEpoch::from(0),
             pq_epoch: GroupEpoch::from(0),
         };
-        let mut dictionary = AppDataDictionary::new().pipe(ensure_component_support)?;
-        let (component_id, data) = info.to_component_data()?.into_parts();
-        dictionary.insert(component_id, data.into());
-        let add_extension =
-            Extension::AppDataDictionary(AppDataDictionaryExtension::new(dictionary));
-        self.t_extensions.add_or_replace(add_extension.clone())?;
-        self.pq_extensions.add_or_replace(add_extension)?;
+
+        let info_component = info.to_component_data()?;
+        ensure_group_context_component_support(&mut self.t_extensions, info_component.clone())?;
+        ensure_group_context_component_support(&mut self.pq_extensions, info_component)?;
 
         let t_group = self
             .t_group_builder
@@ -276,4 +269,51 @@ impl GroupBuilder {
         // We set the capabilities for both groups in `build`.
         self
     }
+}
+
+fn ensure_group_context_component_support<StorageError>(
+    extensions: &mut Extensions<GroupContext>,
+    apq_info: ComponentData,
+) -> Result<(), NewGroupError<StorageError>> {
+    let dictionary = extensions
+        .app_data_dictionary()
+        .map(|extension| extension.dictionary().clone())
+        .unwrap_or_default()
+        .pipe(ensure_component_support)?;
+    let mut dictionary = dictionary;
+    let (compoent_id, data) = apq_info.into_parts();
+    dictionary.insert(compoent_id, data.into());
+    extensions.add_or_replace(Extension::AppDataDictionary(
+        AppDataDictionaryExtension::new(dictionary),
+    ))?;
+    Ok(())
+}
+
+fn merged_required_capabilities(
+    existing: Option<&RequiredCapabilitiesExtension>,
+) -> RequiredCapabilitiesExtension {
+    let mut extension_types = vec![
+        ExtensionType::RequiredCapabilities,
+        ExtensionType::AppDataDictionary,
+    ];
+    let mut proposal_types = vec![ProposalType::AppDataUpdate];
+    let mut credential_types = vec![];
+    if let Some(rq) = existing {
+        for &et in rq.extension_types() {
+            if !extension_types.contains(&et) {
+                extension_types.push(et);
+            }
+        }
+        for &pt in rq.proposal_types() {
+            if !proposal_types.contains(&pt) {
+                proposal_types.push(pt);
+            }
+        }
+        for &ct in rq.credential_types() {
+            if !credential_types.contains(&ct) {
+                credential_types.push(ct);
+            }
+        }
+    }
+    RequiredCapabilitiesExtension::new(&extension_types, &proposal_types, &credential_types)
 }
