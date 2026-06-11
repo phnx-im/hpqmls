@@ -310,7 +310,7 @@ impl ApqMlsGroupMut<'_> {
     ///
     /// Parses incoming messages from the DS. Checks for syntactic errors and makes some semantic checks
     /// as well. If the input is an encrypted message, it will be decrypted. This processing function
-    /// does syntactic and semantic validation of the message. It returns a [ProcessedMessage] enum.
+    /// does syntactic and semantic validation of the message. It returns a [`ProcessedMessage`] enum.
     ///
     /// # Errors
     ///
